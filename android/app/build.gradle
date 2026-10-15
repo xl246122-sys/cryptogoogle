@@ -1,0 +1,111 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace = "com.lu.cryptogoolge"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.lu.cryptogoolge"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 121
+        versionName "1.21"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        production {
+            def signingPath = System.getenv('CRYPTOG_SIGNING_STORE')
+            if (signingPath) {
+                storeFile file(signingPath)
+                storePassword System.getenv('CRYPTOG_SIGNING_STORE_PASSWORD')
+                keyAlias System.getenv('CRYPTOG_SIGNING_ALIAS')
+                keyPassword System.getenv('CRYPTOG_SIGNING_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            debuggable false
+            signingConfig signingConfigs.production
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
+
+tasks.register('copyApkToRelease') {
+    doLast {
+        def releaseDir = file("${rootDir}/../release")
+        if (!releaseDir.exists()) {
+            releaseDir.mkdirs()
+        }
+        def vName = android.defaultConfig.versionName
+        def srcApk = file("${layout.buildDirectory.get().asFile}/outputs/apk/debug/app-debug.apk")
+        if (srcApk.exists()) {
+            copy {
+                from srcApk
+                into releaseDir
+                rename { "Crypto-G V${vName}.apk" }
+            }
+            println ">>> [Auto-Release] Copied APK to ${releaseDir.canonicalPath}/Crypto-G V${vName}.apk"
+        }
+    }
+}
+
+afterEvaluate {
+    tasks.named('assembleDebug') {
+        finalizedBy 'copyApkToRelease'
+    }
+    tasks.named('assembleRelease') {
+        finalizedBy 'copySignedReleaseApk'
+    }
+}
+
+tasks.register('copySignedReleaseApk') {
+    doLast {
+        def source = file("${layout.buildDirectory.get().asFile}/outputs/apk/release/app-release.apk")
+        if (!source.exists()) throw new GradleException('Signed release APK missing; configure external signing credentials')
+        copy {
+            from source
+            into file("${rootDir}/../release")
+            rename { "Crypto-G V${android.defaultConfig.versionName}.apk" }
+        }
+    }
+}
+
+
+
+

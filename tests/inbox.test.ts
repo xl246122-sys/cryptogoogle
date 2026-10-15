@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+const data=new Map<string,string>();
+Object.assign(globalThis,{localStorage:{getItem:(k:string)=>data.get(k)||null,setItem:(k:string,v:string)=>data.set(k,v)},window:{dispatchEvent:()=>true}});
+const {ingestMessage,messages,readMessage}=await import('../src/services/inbox');
+ingestMessage({eventId:'one',title:'Crypto-G 机会观察',body:'not a buy',expiresAt:'1792039000000'});
+ingestMessage({eventId:'one',title:'duplicate'});
+assert.equal(messages().length,1);assert.equal(messages()[0].body,'not a buy');assert.equal(messages()[0].read,false);
+readMessage('one');assert.equal(messages()[0].read,true);
+ingestMessage({eventId:'one',title:'again'});assert.equal(messages()[0].read,true);
+ingestMessage({eventId:'two',title:'Crypto-G 每小时摘要',body:'summary'});assert.equal(messages().find(m=>m.id==='two')?.category,'摘要');
+console.log('Inbox persistence, deduplication, read history and categories passed');

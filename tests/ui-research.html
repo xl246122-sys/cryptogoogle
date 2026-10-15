@@ -1,0 +1,5 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#101116;color:white"><div id="root"></div><script type="module">
+import React from 'react';import {createRoot} from 'react-dom/client';import {DecisionReasons} from '/src/components/DecisionReasons.tsx';import {parseMarketState} from '/src/services/marketState.ts';import recorded from '/audit/releases/v116-0830-replay-result.json';import '/src/index.css';
+const m=parseMarketState({ok:true,schema:1,runtimeHealthy:true,feedHealthy:true,mode:'BASELINE',snapshot:{...recorded,atMs:Date.now()}});
+createRoot(document.getElementById('root')).render(React.createElement('main',{style:{maxWidth:390,margin:'20px auto',padding:12}},React.createElement('p',{style:{fontSize:12,marginBottom:12}},'08:30 历史快照回放展示 · 非实时行情'),React.createElement(DecisionReasons,{market:m})));
+</script></body></html>

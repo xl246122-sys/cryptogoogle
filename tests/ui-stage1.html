@@ -1,0 +1,13 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#111318;color:white"><div id="root"></div><script type="module">
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {RadarView} from '/src/components/views/RadarView.tsx';
+import {parseMarketState,unknownMarket} from '/src/services/marketState.ts';
+import '/src/index.css';
+function Test(){
+ const [available,setAvailable]=React.useState(false);
+ const state=available?parseMarketState({schema:1,ok:true,runtimeHealthy:true,feedHealthy:true,mode:'SHADOW',snapshot:{atMs:Date.now(),engineVersion:'Crypto-G stage1-dev',ruleVersion:'three-models-v1',status:'WAIT_CONFIRMATION',macro:{trend:'RANGING',ma20:100,rsi:46,reason:'合成样例：震荡背景'},reasons:['箱体空间不足，等待合格机会']}}):unknownMarket();
+ return React.createElement('main',{style:{maxWidth:440,margin:'auto',padding:12}},React.createElement('p',null,'隔离界面验收 · 合成数据，不是交易建议'),React.createElement('button',{onClick:()=>setAvailable(!available),style:{padding:12}},available?'切换断线状态':'切换研究观察状态'),React.createElement(RadarView,{tickers:{},latestSignals:[],scanIntervalSec:2,macroTrend:state,onSelectSignal:()=>{},onSwitchTab:()=>{},onTriggerTestSignal:()=>{}}));
+}
+createRoot(document.getElementById('root')).render(React.createElement(Test));
+</script></body></html>

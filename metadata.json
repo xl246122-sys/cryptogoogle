@@ -1,0 +1,8 @@
+{
+  "name": "Remix Crypto-Google-Main",
+  "description": "Ultra-short-term Bitcoin (BTC) quantitative scanner and real-time BUY alert terminal, featuring multi-model market regime analysis, precise entry/TP/SL levels, and instant notifications.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

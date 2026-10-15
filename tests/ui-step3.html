@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>V1.12 成交账本验收（隔离合成数据）</title>
+<body style="background:#10141c;color:#e2e2e8"><div style="max-width:440px;margin:16px auto"><p>验收专用：合成数据、隔离存储、无服务器提交</p><div id="root"></div></div>
+<script type="module">
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {ExecutionLedgerPanel} from '../src/components/ExecutionLedgerPanel';
+import {rememberAction} from '../src/services/modelLibrary';
+import '../src/index.css';
+const storage=window.localStorage, prefix='cryptog-qa-v112:';
+Object.defineProperty(window,'localStorage',{value:{
+  get length(){return Object.keys(storage).filter(k=>k.startsWith(prefix)).length;},
+  key(i){return Object.keys(storage).filter(k=>k.startsWith(prefix))[i]?.slice(prefix.length)??null;},
+  getItem(k){return storage.getItem(prefix+k);},setItem(k,v){storage.setItem(prefix+k,v);}
+}});
+window.fetch=async (url,options)=>{
+  if(String(url).includes('/model-library/capabilities')) return new Response(JSON.stringify({ok:true,userActionProtocol:2}),{status:200});
+  if(String(url).includes('/model-library/action')) {
+    const data=JSON.parse(options.body);
+    return new Response(JSON.stringify({ok:true,eventId:data.eventId}),{status:200});
+  }
+  throw Error('QA blocks all network requests');
+};
+rememberAction({eventId:'qa-received',recordType:'PHONE_RECEIVED',alertId:'BTCUSDT_QA_112',actedAtMs:1791980000000,signalAtMs:1791979990000,signalPrice:100,note:'前台接收合成记录'});
+createRoot(document.getElementById('root')).render(React.createElement(ExecutionLedgerPanel,{alertId:'BTCUSDT_QA_112'}));
+</script></body></html>

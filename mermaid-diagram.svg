@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1207.1434999999997 727.2700000000001" width="1207.1434999999997" height="727.2700000000001" style="--bg:#FFFFFF;--fg:#3B3B3B;--line:#3B3B3B;--accent:#005FB8;--muted:#3B3B3BCC;--surface:#F8F8F8;--border:#3B3B3B;background:var(--bg)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<polyline class="edge" data-from="A" data-to="B" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="366.04449999999997,76.9 366.0444999999999,124.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="B" data-to="C" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="单边瀑布/急跌主跌浪" points="327.3269999999999,241.05249999999995 327.3269999999999,315.77 168.04949999999997,315.77 168.04949999999997,384.07000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="B" data-to="D" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="多头顺势发散" points="366.0444999999999,279.77 366.0444999999999,315.77 414.72799999999995,315.77 414.72799999999995,384.07000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="B" data-to="E" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="均线缠绕 · 箱体震荡" points="404.76199999999994,241.05249999999995 404.76199999999994,291.77 658.072,291.77 658.072,384.07000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="E" data-to="F" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="658.072,420.97 658.072,426.97 250.44849999999997,426.97 250.44849999999997,497.87" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="E" data-to="G" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="658.072,420.97 658.072,426.97 609.3884999999999,426.97 609.3884999999999,497.87" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="E" data-to="H" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="658.072,420.97 658.072,426.97 986.8534999999998,426.97 986.8534999999998,432.97" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="F" data-to="F1" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="250.44849999999997,551.6700000000001 250.44849999999997,599.6700000000001" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="G" data-to="G1" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="609.3884999999999,551.6700000000001 609.3884999999999,599.6700000000001" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="H" data-to="H1" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="986.8534999999998,486.77 986.8534999999998,534.77" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<g class="edge-label" data-from="B" data-to="C" data-label="单边瀑布/急跌主跌浪">
+  <rect x="104.04949999999997" y="322.77" width="127.54" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="167.81949999999998" y="337.91999999999996" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">单边瀑布/急跌主跌浪</text>
+</g>
+<g class="edge-label" data-from="B" data-to="D" data-label="多头顺势发散">
+  <rect x="370.22799999999995" y="322.77" width="88.93" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="414.693" y="337.91999999999996" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">多头顺势发散</text>
+</g>
+<g class="edge-label" data-from="B" data-to="E" data-label="均线缠绕 · 箱体震荡">
+  <rect x="596.572" y="298.77" width="122.19400000000003" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="657.669" y="313.91999999999996" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">均线缠绕 · 箱体震荡</text>
+</g>
+<g class="node" data-id="A" data-label="大盘宏观与微观行情扫描" data-shape="rectangle">
+  <rect x="263.55949999999996" y="40" width="204.96999999999997" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="366.04449999999997" y="58.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">大盘宏观与微观行情扫描</text>
+</g>
+<g class="node" data-id="B" data-label="大盘趋势诊断" data-shape="diamond">
+  <polygon points="366.0444999999999,124.9 443.4794999999999,202.335 366.0444999999999,279.77 288.6094999999999,202.335" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="366.0444999999999" y="202.335" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">大盘趋势诊断</text>
+</g>
+<g class="node" data-id="C" data-label="强空防阴跌机制
+(严格门槛: 累计跌幅≥5%抄底确认)" data-shape="rectangle">
+  <rect x="40" y="384.07000000000005" width="256.099" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="168.0495" y="410.97" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="168.0495" dy="-3.9000000000000012">强空防阴跌机制</tspan><tspan x="168.0495" dy="16.900000000000002">(严格门槛: 累计跌幅≥5%抄底确认)</tspan></text>
+</g>
+<g class="node" data-id="D" data-label="顺势突破 / 回踩起爆
+(TP1: +2.2% | TP2: +4.5%)" data-shape="rectangle">
+  <rect x="324.099" y="384.07000000000005" width="181.25799999999998" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="414.72799999999995" y="410.97" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="414.72799999999995" dy="-3.9000000000000012">顺势突破 / 回踩起爆</tspan><tspan x="414.72799999999995" dy="16.900000000000002">(TP1: +2.2% | TP2: +4.5%)</tspan></text>
+</g>
+<g class="node" data-id="E" data-label="智能震荡三级波动率自适应引擎" data-shape="rectangle">
+  <rect x="533.357" y="384.07000000000005" width="249.42999999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="658.072" y="402.52000000000004" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">智能震荡三级波动率自适应引擎</text>
+</g>
+<g class="node" data-id="F" data-label="级别 1: 小幅度波动 (Narrow / Micro)
+振幅 &lt; 0.95%" data-shape="rectangle">
+  <rect x="123.88099999999997" y="497.87" width="253.135" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="250.44849999999997" y="524.77" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="250.44849999999997" dy="-3.9000000000000012">级别 1: 小幅度波动 (Narrow / Micro)</tspan><tspan x="250.44849999999997" dy="16.900000000000002">振幅 &lt; 0.95%</tspan></text>
+</g>
+<g class="node" data-id="G" data-label="级别 2: 中度波动 (Standard Box)
+振幅 0.95% ~ 2.0% (如 15m 箱体)" data-shape="rectangle">
+  <rect x="491.3424999999999" y="497.87" width="236.09199999999996" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="609.3884999999999" y="524.77" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="609.3884999999999" dy="-3.9000000000000012">级别 2: 中度波动 (Standard Box)</tspan><tspan x="609.3884999999999" dy="16.900000000000002">振幅 0.95% ~ 2.0% (如 15m 箱体)</tspan></text>
+</g>
+<g class="node" data-id="H" data-label="级别 3: 大幅度波动 (Wide Swings)
+振幅 ≥ 2.0%" data-shape="rectangle">
+  <rect x="864.7319999999999" y="432.97" width="244.24299999999997" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="986.8534999999998" y="459.87" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="986.8534999999998" dy="-3.9000000000000012">级别 3: 大幅度波动 (Wide Swings)</tspan><tspan x="986.8534999999998" dy="16.900000000000002">振幅 ≥ 2.0%</tspan></text>
+</g>
+<g class="node" data-id="F1" data-label="【小波段下轨低吸 (RANGE_MICRO)】
+· 探测 12 根 K 线微波段支撑
+· RSI 释放至 ≤46 即激活
+· 稳吃小波段：TP1 +0.8% | TP2 +1.6% | SL 0.55%" data-shape="rectangle">
+  <rect x="88.68349999999998" y="599.6700000000001" width="323.5299999999999" height="87.60000000000001" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="250.44849999999994" y="643.47" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="250.44849999999994" dy="-20.8">【小波段下轨低吸 (RANGE_MICRO)】</tspan><tspan x="250.44849999999994" dy="16.900000000000002">· 探测 12 根 K 线微波段支撑</tspan><tspan x="250.44849999999994" dy="16.900000000000002">· RSI 释放至 ≤46 即激活</tspan><tspan x="250.44849999999994" dy="16.900000000000002">· 稳吃小波段：TP1 +0.8% | TP2 +1.6% | SL 0.55%</tspan></text>
+</g>
+<g class="node" data-id="G1" data-label="【中波段箱体低吸 (RANGE_MEDIUM)】
+· 箱体中下轨/布林下轨探底企稳
+· RSI ≤43 拐头向上，右侧反转阳线突破 EMA7
+· 捕捉箱体反抽：TP1 +1.4% | TP2 +3.0% | SL 0.85%" data-shape="rectangle">
+  <rect x="440.21349999999995" y="599.6700000000001" width="338.3499999999999" height="87.60000000000001" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="609.3884999999999" y="643.47" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="609.3884999999999" dy="-20.8">【中波段箱体低吸 (RANGE_MEDIUM)】</tspan><tspan x="609.3884999999999" dy="16.900000000000002">· 箱体中下轨/布林下轨探底企稳</tspan><tspan x="609.3884999999999" dy="16.900000000000002">· RSI ≤43 拐头向上，右侧反转阳线突破 EMA7</tspan><tspan x="609.3884999999999" dy="16.900000000000002">· 捕捉箱体反抽：TP1 +1.4% | TP2 +3.0% | SL 0.85%</tspan></text>
+</g>
+<g class="node" data-id="H1" data-label="【宽幅拉锯弹性低吸 (RANGE_WIDE)】
+· 宽幅下轨极值超卖 (RSI ≤36) + 弹性偏离
+· 博弈宽幅均值回归：TP1 +2.2% | TP2 +4.5% | SL 1.2%" data-shape="rectangle">
+  <rect x="806.5634999999999" y="534.77" width="360.57999999999987" height="70.7" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="986.8534999999998" y="570.12" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="986.8534999999998" dy="-12.350000000000001">【宽幅拉锯弹性低吸 (RANGE_WIDE)】</tspan><tspan x="986.8534999999998" dy="16.900000000000002">· 宽幅下轨极值超卖 (RSI ≤36) + 弹性偏离</tspan><tspan x="986.8534999999998" dy="16.900000000000002">· 博弈宽幅均值回归：TP1 +2.2% | TP2 +4.5% | SL 1.2%</tspan></text>
+</g>
+</svg>

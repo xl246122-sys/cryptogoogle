@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "Roboto Mono", Menlo, Monaco, Consolas, monospace;
+    
+    /* Google Material 3 Dark Palette Tokens */
+    --md-surface: #0f1115;
+    --md-surface-dim: #13161c;
+    --md-surface-container-low: #171a21;
+    --md-surface-container: #1c2029;
+    --md-surface-container-high: #232834;
+    --md-surface-container-highest: #2b313f;
+    --md-outline: #383e4c;
+    --md-outline-variant: #282d38;
+    
+    /* Google Brand Accents */
+    --google-blue: #8ab4f8;
+    --google-blue-container: #1a3258;
+    --google-green: #81c995;
+    --google-green-container: #143820;
+    --google-yellow: #fdd663;
+    --google-yellow-container: #3d3005;
+    --google-red: #f28b82;
+    --google-red-container: #441717;
+  }
+  
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--md-surface);
+    color: #e2e2e8;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+    letter-spacing: -0.01em;
+  }
+}
+
+.font-mono-numbers {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom slick dark terminal scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #090d16;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Radar scan sweep animation */
+@keyframes radar-sweep {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.animate-radar-sweep {
+  animation: radar-sweep 4s linear infinite;
+  transform-origin: center center;
+}
+
+/* Safe area padding for mobile notch/home bar */
+.pb-safe {
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 16px));
+}
+.pt-safe {
+  padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
+}
+
+/* Glassmorphism panel styling */
+.glass-panel {
+  background: rgba(19, 22, 28, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}

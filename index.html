@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Crypto-G - Bitcoin (BTC) 超短线量化雷达</title>
+    <meta name="description" content="Crypto-G: BTC/USDT 超短线量化扫描与实时 BUY 预警终端" />
+    <meta property="og:title" content="Crypto-G - BTC 量化雷达" />
+    <meta property="og:description" content="Crypto-G: BTC/USDT 超短线量化扫描与实时 BUY 预警终端" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#13161c" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Crypto-G" />
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+    <link rel="apple-touch-icon" href="./icon.svg" />
+    <style>
+      /* Fallback system typography - Instant render with zero network blocking */
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background-color: #0f1115;
+        color: #e2e2e8;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      }
+      #startup-loader {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background-color: #0f1115;
+        z-index: 99999;
+      }
+      .startup-spinner {
+        width: 44px;
+        height: 44px;
+        border: 3px solid #1c2029;
+        border-top-color: #8ab4f8;
+        border-radius: 50%;
+        animation: spin-startup 0.8s linear infinite;
+      }
+      @keyframes spin-startup {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+    <script>
+      // Global error listener to prevent silent black screen
+      window.addEventListener('error', function(event) {
+        console.error('Crypto-G Global Startup Error:', event);
+        var errBox = document.getElementById('startup-error-box');
+        if (errBox) {
+          errBox.textContent = '启动异常: ' + (event.message || event.error || '未知错误');
+          errBox.style.display = 'block';
+        }
+      });
+    </script>
+  </head>
+  <body class="bg-[#0f1115] text-[#e2e2e8] antialiased selection:bg-[#8ab4f8]/25 selection:text-[#8ab4f8]">
+    <div id="root">
+      <!-- Instant pre-React loading UI -->
+      <div id="startup-loader">
+        <div class="startup-spinner"></div>
+        <div style="margin-top: 18px; font-size: 17px; font-weight: 700; color: #8ab4f8; letter-spacing: 0.5px;">Crypto-G</div>
+        <div style="margin-top: 6px; font-size: 13px; color: #9aa0a6;">正在启动 BTC 量化引擎...</div>
+        <div id="startup-error-box" style="display: none; margin-top: 16px; padding: 10px 16px; background: rgba(242, 139, 130, 0.15); border: 1px solid #f28b82; border-radius: 8px; font-size: 12px; color: #f28b82; max-width: 85%;"></div>
+      </div>
+    </div>
+    <script type="module" src="./src/main.tsx"></script>
+  </body>
+</html>

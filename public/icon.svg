@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Material 3 Dark Canvas Gradient -->
+    <radialGradient id="googleDarkSurface" cx="50%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#20242e" />
+      <stop offset="60%" stop-color="#13161c" />
+      <stop offset="100%" stop-color="#0a0c10" />
+    </radialGradient>
+
+    <!-- Google 4-Color Gradients -->
+    <linearGradient id="gBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8ab4f8" />
+      <stop offset="100%" stop-color="#4285f4" />
+    </linearGradient>
+
+    <linearGradient id="gRed" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ea4335" />
+      <stop offset="100%" stop-color="#f28b82" />
+    </linearGradient>
+
+    <linearGradient id="gYellow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbc04" />
+      <stop offset="100%" stop-color="#fdd663" />
+    </linearGradient>
+
+    <linearGradient id="gGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34a853" />
+      <stop offset="100%" stop-color="#81c995" />
+    </linearGradient>
+
+    <!-- Dynamic Breakout Arrow (Gold to Emerald Glow) -->
+    <linearGradient id="cryptoBreakout" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#fbbc04" />
+      <stop offset="45%" stop-color="#00d2ff" />
+      <stop offset="100%" stop-color="#34a853" />
+    </linearGradient>
+
+    <!-- Ambient Shadow Filter -->
+    <filter id="m3Glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Base Material 3 Squircle Container -->
+  <rect x="16" y="16" width="480" height="480" rx="116" fill="url(#googleDarkSurface)" stroke="#2b313f" stroke-width="6" />
+
+  <!-- Background Radar Grid Ring (Ultra-precision Quantum Reticle) -->
+  <g opacity="0.6">
+    <circle cx="256" cy="256" r="186" fill="none" stroke="#252b38" stroke-width="2.5" stroke-dasharray="6 8" />
+    <circle cx="256" cy="256" r="132" fill="none" stroke="#2d3545" stroke-width="2" />
+    <circle cx="256" cy="256" r="74" fill="none" stroke="#374154" stroke-width="2" />
+    <!-- Fine Crosshairs -->
+    <line x1="256" y1="64" x2="256" y2="448" stroke="#333e52" stroke-width="2" stroke-dasharray="8 8" />
+    <line x1="64" y1="256" x2="448" y2="256" stroke="#333e52" stroke-width="2" stroke-dasharray="8 8" />
+  </g>
+
+  <!-- Google 4-Color Signature Iconic "G" Radar Ring Arc -->
+  <g filter="url(#m3Glow)">
+    <!-- 1. Google Blue Horizontal Bar & Upper Right Arc -->
+    <path d="M 256 256 L 406 256 A 150 150 0 0 0 362 150 L 256 256 Z" fill="url(#gBlue)" opacity="0.95" />
+    <!-- Blue outer track curve -->
+    <path d="M 406 256 A 150 150 0 0 0 362 150" fill="none" stroke="#4285f4" stroke-width="36" stroke-linecap="round" />
+
+    <!-- 2. Google Red Top Arc -->
+    <path d="M 362 150 A 150 150 0 0 0 150 150" fill="none" stroke="#ea4335" stroke-width="36" stroke-linecap="round" />
+
+    <!-- 3. Google Yellow Left Arc -->
+    <path d="M 150 150 A 150 150 0 0 0 150 362" fill="none" stroke="#fbbc04" stroke-width="36" stroke-linecap="round" />
+
+    <!-- 4. Google Green Bottom & Lower Right Arc -->
+    <path d="M 150 362 A 150 150 0 0 0 380 330" fill="none" stroke="#34a853" stroke-width="36" stroke-linecap="round" />
+  </g>
+
+  <!-- Central Inner Void Shield -->
+  <circle cx="256" cy="256" r="92" fill="#13161c" stroke="#2a3242" stroke-width="3" />
+
+  <!-- Google Crypto-G Core: Sharp Quantum Breakout Trend Arrow (BUY Execution) -->
+  <g filter="url(#m3Glow)">
+    <!-- Upward Breakout Lightning Arrow -->
+    <path d="M 194 336 
+             L 248 282 
+             L 224 270 
+             L 344 168 
+             L 326 288 
+             L 302 264 
+             L 248 318 
+             Z" 
+          fill="url(#cryptoBreakout)" 
+          stroke="#ffffff" 
+          stroke-width="3" 
+          stroke-linejoin="round" />
+
+    <!-- Center Quantum Target Beacon -->
+    <circle cx="256" cy="256" r="7" fill="#ffffff" />
+    <circle cx="256" cy="256" r="14" fill="none" stroke="#8ab4f8" stroke-width="2.5" opacity="0.85" />
+  </g>
+
+  <!-- Google Micro Accent Dots (The 4 Google Dots at Compass Points) -->
+  <circle cx="256" cy="80" r="7" fill="#ea4335" filter="url(#m3Glow)" />
+  <circle cx="432" cy="256" r="7" fill="#4285f4" filter="url(#m3Glow)" />
+  <circle cx="256" cy="432" r="7" fill="#34a853" filter="url(#m3Glow)" />
+  <circle cx="80" cy="256" r="7" fill="#fbbc04" filter="url(#m3Glow)" />
+
+  <!-- Subtitle Text "CRYPTO-G" at bottom in Google Product Sans styling -->
+  <text x="256" y="474" font-family="'Roboto', 'Plus Jakarta Sans', system-ui, sans-serif" font-size="28" font-weight="900" fill="#e2e2e8" text-anchor="middle" letter-spacing="4">CRYPTO-G</text>
+</svg>

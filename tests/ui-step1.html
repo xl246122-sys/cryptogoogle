@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>信号过期界面验收 · 合成样例</title>
+<body style="background:#13161c"><div id="root"></div>
+<script type="module">
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {SignalAlertModal} from '../src/components/SignalAlertModal';
+import {parseCloudSignal} from '../src/services/signalValidity';
+import wire from './signal_payload.fixture.json';
+import '../src/index.css';
+const now = Date.now();
+const signal = parseCloudSignal({...wire,timestamp:now-100000,confirmationTime:now-101000,expiresAt:now-10000});
+signal.analysis={quantilePct:0};
+signal.reasonZh='界面验收合成样例，不是市场交易信号。检查过期阻断和缺失分析值显示。';
+createRoot(document.getElementById('root')).render(React.createElement(SignalAlertModal,{signal,onClose(){},onAddToPosition(){throw Error('Expired entry must never be enabled');}}));
+</script></body></html>

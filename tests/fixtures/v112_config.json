@@ -1,0 +1,18 @@
+{
+  "MIN_BEARISH_DROP_REQUIRED": 5.0,
+  "REGIME_WINDOW_BARS": 16,
+  "FRICTION_PCT": 0.11,
+  "MIN_NET_TP1": 0.4,
+  "MIN_NET_RR": 1.1,
+  "SETUP_MAX_AGE_MS": 120000,
+  "ALERT_TTL_MS": 90000,
+  "QUOTE_MAX_AGE_MS": 10000,
+  "MAX_ENTRY_DEVIATION_PCT": 0.15,
+  "TARGET_BUFFER_PCT": 0.05,
+  "RULE_VERSION": "three-models-v1",
+  "TRADE_POLICIES": {
+    "BREAKOUT": {"max_hold_minutes":240,"min_net_tp1":0.4,"max_net_target":null,"max_stop_pct":1.2,"tp1_fraction":0.5},
+    "REBOUND": {"max_hold_minutes":90,"min_net_tp1":1.0,"max_net_target":6.0,"max_stop_pct":2.0,"tp1_fraction":0.7},
+    "RANGE": {"max_hold_minutes":240,"min_net_tp1":1.0,"max_net_target":4.0,"max_stop_pct":1.2,"tp1_fraction":1.0}
+  }
+}

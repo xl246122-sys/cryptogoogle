@@ -1,0 +1,17 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#111318;color:white"><div id="root"></div><script type="module">
+import React from 'react';import {createRoot} from 'react-dom/client';
+import {ServerConnectionPanel} from '/src/components/ServerConnectionPanel.tsx';
+import {notificationService} from '/src/services/notificationService.ts';import '/src/index.css';
+// Isolated synthetic UI acceptance; never connects to production or uses real credentials.
+const memory=new Map();Object.defineProperty(window,'localStorage',{value:{getItem:k=>memory.get(k)||null,setItem:(k,v)=>memory.set(k,v),removeItem:k=>memory.delete(k)}});
+let bound=false,offline=false;
+notificationService.getDeviceToken=()=> 'synthetic-push-token-for-ui-testing';
+notificationService.ensureDeviceToken=async()=>notificationService.getDeviceToken();notificationService.refreshPermission=async()=>true;
+window.fetch=async(url,init)=>{if(offline)throw new Error('网络不可用，请检查连接');let data;
+if(url.endsWith('market-state'))data={ok:true,schema:1,runtimeHealthy:true,feedHealthy:true,snapshot:{atMs:Date.now()},exitNotificationHealthy:true};
+else if(url.endsWith('exit-device-status'))data={ok:true,registered:bound,matchesCurrentDevice:bound,pushEnabled:true};
+else if(url.endsWith('exit-device')){bound=JSON.parse(init.body).token!==null;data={ok:true,registered:bound,pushEnabled:true};}
+else throw Error('Unexpected request');return {ok:true,status:200,json:async()=>data};};
+function Test(){const [key,setKey]=React.useState(0);return React.createElement('main',{style:{width:390,maxWidth:'100%',padding:12,boxSizing:'border-box',margin:'auto'}},React.createElement('p',{style:{fontSize:12}},'隔离验收 · 合成数据'),React.createElement(ServerConnectionPanel,{key}),React.createElement('button',{onClick:()=>setKey(key+1)},'模拟重新打开'),React.createElement('button',{onClick:()=>{offline=!offline;setKey(key+1)}},'切换断网'));}
+createRoot(document.getElementById('root')).render(React.createElement(Test));
+</script></body></html>

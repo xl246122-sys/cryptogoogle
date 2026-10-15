@@ -1,0 +1,66 @@
+# 项目交接与二次开发任务指令 (Project Handover Brief)
+
+你好，Antigravity！本项目（ShotCrypto）的完整前端与量化引擎源代码已位于本地目录 `D:\Crypto-Google`。
+请你以资深量化交易工程师与全栈架构师的角色，全面接管并推进该项目的云端部署与 Android 端到端落地。
+
+---
+
+## 一、 项目定位与核心量化逻辑架构
+
+1. **核心定位**：
+   - 专为加密货币交易者打造的超短线高频量化雷达终端，**专属生成 BUY（买入）信号**（无做空、无对冲杂波）。
+   - **双币联动核心机制**：以 **BTC/USDT** 的 1小时（1H）宏观趋势作为全局风向标与防守过滤器，在实盘标的 **SUI/USDT**（及 BTC/LINK）出现确定性极值反转时执行买入。
+
+2. **已落地的核心量化风控规则（位于 `src/services/quantEngine.ts`）**：
+   - **宏观趋势判定 (`diagnoseMacroTrend`)**：结合 1H MA20/MA50、EMA(7)/EMA(25) 均线通道、1H RSI（<48 判为空头）、趋势漂移多因子严格判定大盘牛熊。
+   - **空头下行 5% 跌幅硬性门槛（防阴跌核心）**：大盘或标的自身处于空头下行通道时，**所有买入策略必须满足标的从近期高点累计跌幅 ≥ 5.0%**（深度超跌确认）。若回撤仅 1%~3% 的阴跌，一律全面拦截，严禁接飞刀！
+   - **瀑布通道拦截器 (`diagnoseCascadeDowntrend`)**：EMA(7) < EMA(25) 单边连阴瀑布下杀时彻底静默，必须收出右侧反转阳线突破 EMA7 方可激活。
+   - **VWAP-Volatility Spread 过滤**：均值回归类策略要求现价距离 1m VWAP 偏离 ≥ 1.5 ATR，过滤震荡杂波。
+   - **核心买入模型库**：触底企稳反弹（Confirmed Bottom Rebound）、RSI 底背离右侧买入（RSI Bullish Divergence）、暴跌极值超卖抽回（Flash Crash Rebound）、顺势回踩均线（Trend Pullback Buy）、放量突破（Burst Breakout）。
+
+---
+
+## 二、 现有环境与资产清单
+
+1. **本地代码工作区**：`D:\Crypto-Google`
+   - 技术栈：React 19 + TypeScript + Vite + Tailwind CSS + Lucide Icons + Recharts
+   - 关键服务文件：
+     - `src/services/quantEngine.ts`：量化扫描与风控引擎
+     - `src/services/binanceService.ts`：币安 WebSocket 与 REST 深度行情直连
+     - `src/services/exportService.ts`：包含完整的独立 Python 24/7 守护脚本与 Systemd 配置
+     - `src/components/views/ServerDaemonView.tsx`：云端服务器管理面板
+
+2. **腾讯云日本节点服务器（已验证 root 权限）**：
+   - IP 地址：`43.163.203.127`（直通币安东京撮合服务器，延迟极低）
+   - 系统环境：Ubuntu 26.04.1 LTS（Resolute Raccoon）
+   - 登录账户：`ubuntu`（具备免密 `sudo` root 权限）
+   - 主机名：`VM-0-13-ubuntu`
+
+3. **Firebase Android 数据与推送服务已创建**：
+   - 软件包名称（Package Name）：`com.lu.cryptogoolge`
+   - 应用 ID（App ID）：`1:790946633140:android:af5acc697c45f60b3f4ee1`
+   - 应用别名：`cryptogoolge`
+   - 配置文件：需引导下载并在 Android 工程中引入 `google-services.json`
+
+---
+
+## 三、 当前交接后需要你执行的具体任务（逐步执行）
+
+### 任务 1：在腾讯云服务器部署 24/7 Python 量化扫描引擎
+- 参考 `src/services/exportService.ts` 中定义的 `PYTHON_DAEMON_SCRIPT` 与 `SYSTEMD_SERVICE_FILE`。
+- 在服务器 `43.163.203.127` 上：
+  1. 创建 `/opt/shotcrypto` 运行目录。
+  2. 安装 Python3、`pip`、`requests`、`firebase-admin` 等必要依赖。
+  3. 配置高频扫描脚本 `scanner_daemon.py`（确保与前端 `quantEngine.ts` 的「空头必须满足 5% 跌幅门槛」严格一致）。
+  4. 注册为 systemd 系统守护进程 `shotcrypto.service`，设置开机自启并启动，确保断网自连、熄屏全天候后台运行。
+
+### 任务 2：打通 Firebase 云端推送（FCM）
+- 配置 Firebase Admin SDK 密钥（`serviceAccountKey.json`），使 Python 守护进程在触发高胜率买入信号时，即刻通过 FCM 广播推送至 Android 设备。
+
+### 任务 3：Android 客户端打包与通知接收
+- 针对包名 `com.lu.cryptogoolge`，将本地项目通过 PWA/TWA（Trusted Web Activity，基于 Bubblewrap/Android Studio）或 Capacitor 构建为 Android APK。
+- 导入 `google-services.json`，确保 Android 手机在熄屏、锁屏或切换后台时，仍可收到即时买入提示音与弹窗横幅通知。
+
+---
+
+请确认你已完全理解以上架构与目标，并给出你的第一步执行计划（优先开始服务器后端环境的初始化配置与部署）。

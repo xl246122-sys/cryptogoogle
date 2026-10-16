@@ -69,11 +69,13 @@ export interface VolatilityRegime {
 }
 
 export interface MacroTrendAnalysis {
+  stateSource?: 'SERVER' | 'UNAVAILABLE';
   rejectionReasons?: string[];
   research?: {label:string;status:string;reasons:string[]}[];
   hourlyTrend: 'BEARISH' | 'BULLISH' | 'RANGING';
   isStronglyBearish?: boolean;
   hourlyMa20: number;
+  hourlyBollinger?: { upper: number; lower: number };
   hourlyMa50: number;
   hourlyRsi: number;
   trendDriftPercent: number;

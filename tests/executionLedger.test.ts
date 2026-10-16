@@ -39,7 +39,7 @@ class MemoryStorage {
   getItem(k:string){return this.map.get(k)??null;}setItem(k:string,v:string){this.map.set(k,v);}clear(){this.map.clear();this.map.set('cryptog_device_connection_v1',JSON.stringify({url:'https://example.test',token:'test_device_credential_12345678901234567890'}));}
 }
 const memory=new MemoryStorage();
-Object.defineProperty(globalThis,'localStorage',{value:memory,configurable:true});
+Object.defineProperty(globalThis,'localStorage',{value:memory,configurable:true,writable:true});
 const action = (eventId:string)=>({eventId,recordType:'PHONE_RECEIVED' as const,alertId:'BTCUSDT_test',actedAtMs:now});
 const ack = (id:string)=>new Response(JSON.stringify({ok:true,eventId:id}),{status:200});
 let transport: typeof fetch;

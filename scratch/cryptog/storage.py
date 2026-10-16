@@ -91,7 +91,7 @@ class EventStore:
         return None
 
     def finish(self, event_id, now, status, error=None):
-        if status not in ('SENT','PENDING','INVALIDATED','EXPIRED'): raise ValueError('Bad delivery state')
+        if status not in ('SENT','PENDING','INVALIDATED','EXPIRED','CANCELLED'): raise ValueError('Bad delivery state')
         with self.lock, self.db:
             self.db.execute("UPDATE outbox SET state=?,due=?,last_error=?,sent_ms=? WHERE id=? AND state IN ('PENDING','SENDING')",
                             (status,now+5000,error,now if status=='SENT' else None,event_id))

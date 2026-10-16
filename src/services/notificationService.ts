@@ -1,4 +1,4 @@
-import {ingestMessage} from './inbox';
+import { ingestMessage, focusMessage } from './inbox';
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications, Channel } from '@capacitor/push-notifications';
 import {refreshExitDevice} from './exitPush';
@@ -80,16 +80,26 @@ class NotificationService {
       });
 
       await PushNotifications.addListener('pushNotificationReceived', (notification) => {
-        ingestMessage({...notification.data,title:notification.title,body:notification.body});
-        if (this.signalCallback && notification.data) {
-          this.signalCallback(notification.data, 'received');
+        const notif = notification || ({} as any);
+        const data = notif.data || {};
+        const title = notif.title || data.title || data.strategyNameZh || data.scenarioNameZh || '';
+        const body = notif.body || data.body || data.summaryZh || data.message || data.reasonZh || '';
+        ingestMessage({ ...data, title, body });
+        if (this.signalCallback && data) {
+          this.signalCallback(data, 'received');
         }
       });
 
       await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
-        ingestMessage({...action.notification?.data,title:action.notification?.title,body:action.notification?.body});
-        if (this.signalCallback && action.notification?.data) {
-          this.signalCallback(action.notification.data, 'opened');
+        const notif = action?.notification || ({} as any);
+        const data = notif.data || {};
+        const title = notif.title || data.title || data.strategyNameZh || data.scenarioNameZh || '';
+        const body = notif.body || data.body || data.summaryZh || data.message || data.reasonZh || '';
+        const msgId = data.eventId || data.id || data.testId || data.deliveryId || notif.id || ('push_' + Date.now());
+        ingestMessage({ ...data, id: msgId, title, body });
+        focusMessage(String(msgId));
+        if (this.signalCallback && data) {
+          this.signalCallback(data, 'opened');
         }
       });
       if (permStatus.receive === 'granted') {

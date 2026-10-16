@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "node tests/run_python.mjs && node tests/run_ts.mjs tests/quantEngine.test.ts tests/signalValidity.test.ts tests/executionLedger.test.ts tests/marketState.test.ts tests/positions.test.ts tests/exitPush.test.ts tests/connectionStatus.test.ts"
+    "test": "node tests/run_python.mjs && node tests/run_ts.mjs tests/quantEngine.test.ts tests/signalValidity.test.ts tests/executionLedger.test.ts tests/marketState.test.ts tests/positions.test.ts tests/exitPush.test.ts tests/connectionStatus.test.ts tests/quickPaper.test.ts tests/experimentalProtocol.test.ts tests/inbox.test.ts tests/aiEngine.test.ts"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",

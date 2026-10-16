@@ -24,6 +24,7 @@ interface SignalsViewProps {
   onSelectSignal: (signal: TradeSignal) => void;
   onAddToPosition: (signal: TradeSignal) => void;
   onClearHistory: () => void;
+  onSwitchTab?: (tab: any) => void;
 }
 
 export const SignalsView: React.FC<SignalsViewProps> = ({
@@ -32,6 +33,7 @@ export const SignalsView: React.FC<SignalsViewProps> = ({
   onSelectSignal,
   onAddToPosition,
   onClearHistory,
+  onSwitchTab,
 }) => {
   const [filterStrategy, setFilterStrategy] = useState<string>('ALL');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -68,7 +70,7 @@ export const SignalsView: React.FC<SignalsViewProps> = ({
 
   return (
     <div className="space-y-3 pb-24">
-      <MessagePanel/>
+      <MessagePanel onSwitchTab={onSwitchTab} />
       {/* Top Filter & Clean Header */}
       <div className="flex items-center justify-between px-1">
         <div>

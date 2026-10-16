@@ -55,8 +55,8 @@ export const RadarView: React.FC<RadarViewProps> = ({
   return (
     <div className="space-y-3 pb-28">
       {/* 1. Android M3 Compact Scanner Status Pill */}
-      <div className="px-3.5 py-2 rounded-xl bg-[#171a21] border border-[#282d38] flex items-center justify-between text-xs shadow-sm">
-        <div className="flex items-center gap-2">
+      <div className="px-3.5 py-2 rounded-xl bg-[#171a21] border border-[#282d38] flex flex-wrap items-center justify-between gap-2 text-xs shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="relative flex h-2 w-2">
             <span
               className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
@@ -69,14 +69,14 @@ export const RadarView: React.FC<RadarViewProps> = ({
               }`}
             ></span>
           </span>
-          <span className="font-semibold text-[#e2e2e8]">{macroTrend.dataReady ? 'BTC 云端扫描状态已同步' : '正在核验云端扫描状态'}</span>
+          <span className="font-semibold text-[#e2e2e8]">{macroTrend.dataReady && macroTrend.stateSource === 'SERVER' ? 'BTC 云端趋势已同步' : '云端趋势待更新'}</span>
           <span className="text-[#9aa0a6] font-mono text-[11px] px-1.5 py-0.2 rounded bg-[#1f242e]">
             行情刷新 {scanIntervalSec}s
           </span>
         </div>
 
         <button
-          onClick={() => onSwitchTab('strategy')}
+          onClick={() => onSwitchTab('system')}
           className="flex items-center gap-1 text-[11px] font-semibold text-[#8ab4f8] hover:text-[#aecbfa] px-2.5 py-1 rounded-full bg-[#1a3258]/50 hover:bg-[#1a3258] transition-colors border border-[#3b6bb0]/30 active:scale-95"
         >
           <SlidersHorizontal className="w-3 h-3" />
@@ -88,50 +88,32 @@ export const RadarView: React.FC<RadarViewProps> = ({
 
       {/* 4. Live BTC Market Card */}
       <div className="p-3.5 rounded-2xl bg-[#1c2029] border border-[#2b313f] shadow-sm space-y-3">
-        {/* Card Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-base border bg-[#fbbc04]/15 border-[#fbbc04]/30 text-[#fbbc04]">
-              ₿
+        {/* Compact title and badges stay on separate rows on phones. */}
+        <div className="space-y-2.5 border-b border-[#2b313f] pb-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-9 h-9 shrink-0 rounded-xl flex items-center justify-center font-bold text-lg border bg-[#fbbc04]/15 border-[#fbbc04]/30 text-[#fbbc04]">₿</div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-white whitespace-nowrap">Bitcoin <span className="text-xs font-normal text-[#9aa0a6]">比特币</span></div>
+                <div className="text-[10px] font-mono text-[#9aa0a6] whitespace-nowrap mt-0.5">BTC/USDT</div>
+              </div>
             </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm font-semibold text-white">Bitcoin (比特币)</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#252932] text-[#c4c7c5] border border-[#383e4c]">
-                  BTC / USDT
-                </span>
-                <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-[#143820] text-[#81c995] font-semibold">
-                  量化标的
-                </span>
-              </div>
-              <div className="text-[10px] text-[#9aa0a6] font-mono flex items-center gap-1">
-                <span>{btc?.dataSource || '行情不可用或已过期'}</span>
-                {btc?.latency ? (
-                  <>
-                    <span>·</span>
-                    <span>{btc.latency}ms</span>
-                  </>
-                ) : null}
-              </div>
+            <div className={`shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono font-semibold whitespace-nowrap border ${!btc ? 'bg-[#252932] text-[#9aa0a6] border-[#383e4c]' : isUp ? 'bg-[#143820] text-[#81c995] border-[#2a6831]' : 'bg-[#441717] text-[#f28b82] border-[#6b252b]'}`}>
+              {btc && (isUp ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />)}
+              <span>{btc ? `${isUp ? '+' : ''}${btc.change24h.toFixed(2)}%` : '暂无行情'}</span>
             </div>
           </div>
-
-          <div
-            className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-mono font-medium ${
-              isUp
-                ? 'bg-[#143820] text-[#81c995] border border-[#2a6831]'
-                : 'bg-[#441717] text-[#f28b82] border border-[#6b252b]'
-            }`}
-          >
-            {btc && (isUp ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />)}
-            <span>
-              {btc ? `${isUp ? '+' : ''}${btc.change24h}%` : '未知'}
-            </span>
+          <div className="flex items-center justify-between gap-2 text-[10px] text-[#9aa0a6]">
+            <span className="min-w-0 truncate" title={btc?.dataSource}>{btc ? (btc.dataSource?.includes('WebSocket') ? '币安 · 实时行情' : btc.dataSource || '币安行情') : '行情不可用或已过期'}</span>
+            <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
+              {btc && Number.isFinite(btc.latency) && <span className="font-mono">{btc.latency}ms</span>}
+              <span className="px-2 py-0.5 rounded-md bg-[#252932] text-[#c4c7c5]">量化标的</span>
+            </div>
           </div>
         </div>
 
         {/* Real-time Price Display */}
-        <div className="flex items-baseline justify-between pt-1">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2 pt-1">
           <div>
             <div className="text-[11px] text-[#9aa0a6]">币安成交现价</div>
             <div className="text-2xl font-bold font-mono tracking-tight text-white mt-0.5">
@@ -154,6 +136,7 @@ export const RadarView: React.FC<RadarViewProps> = ({
         {/* Compact Sparkline Trend */}
         {btc?.sparkline && btc.sparkline.length > 2 && (
           <div className="pt-1">
+            <p className="text-[10px] text-gray-400 mb-1">最近 {btc.sparkline.length} 次报价 · 涨绿 / 跌红 / 平灰</p>
             <div className="h-8 w-full flex items-end gap-0.5 p-1 bg-[#13161c] rounded-lg border border-[#282d38]">
               {btc.sparkline.map((val, i) => {
                 const min = Math.min(...btc.sparkline!);
@@ -163,7 +146,7 @@ export const RadarView: React.FC<RadarViewProps> = ({
                   <div
                     key={i}
                     className={`flex-1 rounded-t-xs transition-all ${
-                      isBearish ? 'bg-[#f28b82]/70' : 'bg-[#81c995]/70'
+                      i === 0 || val === btc.sparkline![i - 1] ? 'bg-gray-500/70' : val < btc.sparkline![i - 1] ? 'bg-[#f28b82]/70' : 'bg-[#81c995]/70'
                     }`}
                     style={{ height: `${heightPct}%` }}
                   ></div>
@@ -173,6 +156,7 @@ export const RadarView: React.FC<RadarViewProps> = ({
           </div>
         )}
 
+        <p className="text-[10px] text-gray-500">报价柱非 K 线、非买入信号；1H 收盘趋势与短线涨跌可能不同。</p>
         {/* Key Indicators Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-1 text-[11px] font-mono">
           <div className="p-2 rounded-xl bg-[#171a21] border border-[#282d38]">
@@ -182,17 +166,17 @@ export const RadarView: React.FC<RadarViewProps> = ({
             </div>
           </div>
           <div className="p-2 rounded-xl bg-[#171a21] border border-[#282d38]">
-            <div className="text-[10px] text-[#f28b82]">布林上轨 (Upper)</div>
-            <div className="font-semibold text-[#f28b82] mt-0.5">未接入计算</div>
+            <div className="text-[10px] text-[#f28b82]">1H 布林上轨 (20,2)</div>
+            <div className="font-semibold text-[#f28b82] mt-0.5">{macroTrend.dataReady && macroTrend.hourlyBollinger ? formatPrice(macroTrend.hourlyBollinger.upper) : '等待完整收盘数据'}</div>
           </div>
           <div className="p-2 rounded-xl bg-[#171a21] border border-[#282d38]">
-            <div className="text-[10px] text-[#81c995]">布林下轨 (Lower)</div>
-            <div className="font-semibold text-[#81c995] mt-0.5">未接入计算</div>
+            <div className="text-[10px] text-[#81c995]">1H 布林下轨 (20,2)</div>
+            <div className="font-semibold text-[#81c995] mt-0.5">{macroTrend.dataReady && macroTrend.hourlyBollinger ? formatPrice(macroTrend.hourlyBollinger.lower) : '等待完整收盘数据'}</div>
           </div>
           <div className="p-2 rounded-xl bg-[#171a21] border border-[#282d38]">
             <div className="text-[10px] text-[#8ab4f8]">策略状态</div>
             <div className={`font-semibold mt-0.5 ${isBearish ? 'text-[#fdd663]' : 'text-[#81c995]'}`}>
-              {macroTrend.dataReady === false ? '等待行情' : isBearish ? '防守观察' : '观察候选'}
+              {macroTrend.dataReady === false ? '等待行情' : isBearish ? '防守观察' : '等待买入确认'}
             </div>
           </div>
         </div>

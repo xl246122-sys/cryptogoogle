@@ -1,7 +1,7 @@
 import React from 'react';
-import { Radar, Bell, BookmarkCheck, Cpu, Server } from 'lucide-react';
+import { Radar, Bell, BrainCircuit, BookmarkCheck, Cpu, Server } from 'lucide-react';
 
-export type TabType = 'radar' | 'signals' | 'watchlist' | 'strategy' | 'server';
+export type TabType = 'radar' | 'signals' | 'ai' | 'watchlist' | 'system' | 'strategy' | 'server';
 
 interface BottomNavProps {
   activeTab: TabType;
@@ -27,18 +27,18 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       badge: unreadSignalsCount,
     },
     {
+      id: 'ai',
+      label: 'AI大脑',
+      icon: <BrainCircuit className="w-5 h-5" />,
+    },
+    {
       id: 'watchlist',
       label: '自选持仓',
       icon: <BookmarkCheck className="w-5 h-5" />,
     },
     {
-      id: 'strategy',
-      label: '量化模型',
-      icon: <Cpu className="w-5 h-5" />,
-    },
-    {
-      id: 'server',
-      label: '云端守护',
+      id: 'system',
+      label: '系统守护',
       icon: <Server className="w-5 h-5" />,
     },
   ];
@@ -47,7 +47,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#13161c]/98 backdrop-blur-xl border-t border-[#282d38] pb-safe select-none shadow-[0_-4px_16px_rgba(0,0,0,0.3)]">
       <div className="max-w-md mx-auto grid grid-cols-5 items-center h-16 px-1.5">
         {tabs.map((tab) => {
-          const isActive = activeTab === tab.id;
+          const isActive =
+            activeTab === tab.id ||
+            (tab.id === 'system' && (activeTab === 'server' || activeTab === 'strategy'));
           return (
             <button
               key={tab.id}
@@ -56,7 +58,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             >
               {/* Material 3 Active Pill Indicator */}
               <div
-                className={`relative px-4 py-1 rounded-full transition-all flex items-center justify-center ${
+                className={`relative px-3.5 py-1 rounded-full transition-all flex items-center justify-center ${
                   isActive
                     ? 'bg-[#1a3258] text-[#8ab4f8] shadow-sm'
                     : 'text-[#9aa0a6] group-hover:text-[#e2e2e8]'

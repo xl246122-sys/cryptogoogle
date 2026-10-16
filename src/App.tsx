@@ -11,6 +11,7 @@ import { soundService } from './services/soundService';
 import { notificationService } from './services/notificationService';
 import {recordExitPush,flushExitReceipts} from './services/exitPush';
 import { flushLibraryQueue, recordPhoneReceived, recordSimBuy, rememberAction } from './services/modelLibrary';
+import { focusMessage } from './services/inbox';
 
 import { parseCloudSignal, entryIssue, signalTimeIssue, fetchEntryQuote } from './services/signalValidity';
 
@@ -21,9 +22,10 @@ import { PWAInstallModal } from './components/PWAInstallModal';
 
 import { RadarView } from './components/views/RadarView';
 import { SignalsView } from './components/views/SignalsView';
+import { AIQuantView } from './components/views/AIQuantView';
 import { WatchlistView } from './components/views/WatchlistView';
-import { StrategyEngineView } from './components/views/StrategyEngineView';
-import { ServerDaemonView } from './components/views/ServerDaemonView';
+import { SystemGuardView } from './components/views/SystemGuardView';
+import { aiScheduler } from './services/aiEngine';
 
 const DEFAULT_CONFIG: ScannerConfig = {
   scanIntervalMs: 2000,
@@ -202,12 +204,16 @@ export default function App() {
     const permissionTimer=window.setInterval(resumePermission,10000);
     const unsubscribeSignal = notificationService.onSignalReceived(async (data: any, origin?: 'received' | 'opened') => {
       if (data?.eventType==='POSITION_EXIT_NOTICE') {
-        setActiveTab('server');
+        setActiveTab('system');
         try {await recordExitPush(data,origin==='opened'?'opened':'received');await flushExitReceipts();}
         catch {window.dispatchEvent(new CustomEvent('cryptog-exit-receipt-error'));}
         return;
       }
-      if(origin==='opened')setActiveTab('signals');
+      if (origin === 'opened') {
+        setActiveTab('signals');
+        const msgId = data?.eventId || data?.id || data?.testId || data?.deliveryId;
+        if (msgId) focusMessage(String(msgId));
+      }
       const signal = parseCloudSignal(data);
       if (!signal) return; // Legacy/incomplete pushes cannot become fresh BUY signals.
       recordPhoneReceived(signal.id, signal.strategy, signal.timestamp, signal.entryPrice, origin === 'opened');
@@ -275,13 +281,32 @@ export default function App() {
     return () => { disposed = true; window.clearInterval(timer);window.clearInterval(receiptTimer); };
   }, []);
 
+  // Global 24/7 AI Quantitative Scheduler (Active across all tabs)
+  useEffect(() => {
+    aiScheduler.start();
+    return () => {
+      aiScheduler.stop();
+    };
+  }, []);
+
   // Subscribe to Binance Stream & start scanner
   useEffect(() => {
     binanceService.startScanning(config.scanIntervalMs);
 
     const unsubscribe = binanceService.onTickersUpdate((updatedTickers) => {
       setTickers(updatedTickers);
-
+      const btc = updatedTickers['BTCUSDT'];
+      if (btc && btc.sparkline && btc.sparkline.length >= 5) {
+        // Construct lightweight pseudo-candles for Layer 3 rapid drop detection
+        const recentCandles = btc.sparkline.slice(-5).map((price, i) => ({
+          open: price,
+          high: price,
+          low: price,
+          close: price,
+          volume: 1,
+        }));
+        void aiScheduler.checkEventTrigger(recentCandles);
+      }
     });
 
     return () => {
@@ -423,8 +448,11 @@ export default function App() {
               setSignals([]);
               setUnreadCount(0);
             }}
+            onSwitchTab={setActiveTab}
           />
         )}
+
+        {activeTab === 'ai' && <AIQuantView />}
 
         {activeTab === 'watchlist' && (
           <WatchlistView
@@ -440,8 +468,8 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'strategy' && (
-          <StrategyEngineView
+        {(activeTab === 'system' || activeTab === 'strategy' || activeTab === 'server') && (
+          <SystemGuardView
             config={config}
             macroTrend={macroTrend}
             onUpdateConfig={(updates) => setConfig((c) => ({ ...c, ...updates }))}
@@ -449,8 +477,6 @@ export default function App() {
             hasNotificationPermission={hasNotificationPermission}
           />
         )}
-
-        {activeTab === 'server' && <ServerDaemonView />}
       </main>
 
       {/* Fixed Bottom Ergonomic Thumb Tab Navigation */}

@@ -26,9 +26,16 @@ class NotificationWorker(threading.Thread):
             self.store.finish(event_id,now,'INVALIDATED','ENTRY_RECHECK_FAILED')
             return
         try:
-            success = self.send(event_id,signal)
-            self.store.finish(event_id,now,'SENT' if success else 'PENDING',None if success else 'FCM_FAILED')
-            self.error = None if success else 'FCM_FAILED'
+            res = self.send(event_id,signal)
+            if res == 'DISABLED_BY_CONFIG':
+                self.store.finish(event_id,now,'CANCELLED','DISABLED_BY_CONFIG')
+                self.error = None
+            elif res is True:
+                self.store.finish(event_id,now,'SENT',None)
+                self.error = None
+            else:
+                self.store.finish(event_id,now,'PENDING','FCM_FAILED')
+                self.error = 'FCM_FAILED'
         except Exception as exc:
             self.error = type(exc).__name__
             self.store.finish(event_id,now,'PENDING',self.error)

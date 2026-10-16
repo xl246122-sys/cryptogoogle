@@ -1,0 +1,6 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#101116;color:white"><div id="root"></div><script type="module">
+import React from 'react';import {createRoot} from 'react-dom/client';import {RadarView} from '/src/components/views/RadarView.tsx';import '/src/index.css';
+const m={dataReady:true,hourlyTrend:'RANGING',hourlyRsi:52,hourlyMa20:81683.88,hourlyBollinger:{upper:83521.40,lower:79846.36},regimeNameZh:'验收示例',regimeDescription:'合成数据，仅用于布局验收',biasZh:'收盘行情'};
+const ticker={symbol:'BTCUSDT',name:'Bitcoin',price:82327.85,change24h:0.69,high24h:82634.30,low24h:79800,volume24h:0,quoteVolume24h:0,lastUpdate:Date.now(),dataSource:'币安 WebSocket 毫秒级逐笔 (Vision)',latency:197};
+createRoot(document.getElementById('root')).render(React.createElement('main',{style:{padding:12}},React.createElement(RadarView,{tickers:{BTCUSDT:ticker},latestSignals:[],scanIntervalSec:5,macroTrend:m,onSelectSignal:()=>{},onSwitchTab:()=>{},onTriggerTestSignal:()=>{}})));
+</script></body></html>

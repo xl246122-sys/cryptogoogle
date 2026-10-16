@@ -22,6 +22,13 @@ def diagnose_macro_trend(btc_hourly_candles: Optional[List[dict]], btc_ticker: O
     change24h = btc_ticker["change24h"]
 
     ma20 = TechnicalIndicators.sma(closes, min(20, len(closes)))
+    # Display-only Bollinger bands: 20 closed hourly closes, population variance.
+    window = closes[-20:]
+    bollinger = None
+    if len(window) == 20 and all(math.isfinite(x) and x > 0 for x in window):
+        middle = sum(window) / 20
+        deviation = math.sqrt(sum((x - middle) ** 2 for x in window) / 20)
+        bollinger = {"upper": middle + 2 * deviation, "lower": middle - 2 * deviation}
     ema7 = TechnicalIndicators.ema(closes, 7)
     ema25 = TechnicalIndicators.ema(closes, 25)
     hourly_rsi = TechnicalIndicators.rsi(btc_hourly_candles, 14)
@@ -54,6 +61,7 @@ def diagnose_macro_trend(btc_hourly_candles: Optional[List[dict]], btc_ticker: O
             "is_strongly_bearish": False,
             "rsi": hourly_rsi,
             "ma20": ma20,
+            "bollinger": bollinger,
             "min_required_drop": 0.0,
             "reason": "1H 均线多头向上发散，站稳 MA20 与 EMA7"
         }
@@ -65,6 +73,7 @@ def diagnose_macro_trend(btc_hourly_candles: Optional[List[dict]], btc_ticker: O
             "is_strongly_bearish": is_strong_bear,
             "rsi": hourly_rsi,
             "ma20": ma20,
+            "bollinger": bollinger,
             "min_required_drop": 5.0,
             "reason": f"1H 处于空头下行通道 (承压 MA20 ${ma20:.1f}, 1H RSI={hourly_rsi:.1f})"
         }
@@ -75,6 +84,7 @@ def diagnose_macro_trend(btc_hourly_candles: Optional[List[dict]], btc_ticker: O
             "is_strongly_bearish": False,
             "rsi": hourly_rsi,
             "ma20": ma20,
+            "bollinger": bollinger,
             "min_required_drop": 0.0,
             "reason": "1H 处于区间震荡平衡态 (均线缠绕，适配动态3级波动模型)"
         }

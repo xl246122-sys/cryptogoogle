@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseMarketState } from '../src/services/marketState';
+import { fetchMarketState, hourlyBollinger, closedHourlyCloses, parseMarketState } from '../src/services/marketState';
 import { validateConnection } from '../src/services/serverConnection';
 import { readFileSync } from 'node:fs';
 const now=Date.now();
@@ -37,4 +37,50 @@ test('shadow research stays separate and disappears with stale server state',()=
  const m=parseMarketState(s,now);assert.equal(m.research?.length,1);assert.deepEqual(m.rejectionReasons,['空间不足']);assert.equal(m.allowLongBreakout,false);
  assert.equal(parseMarketState(s,now+10001).research,undefined);
  s.snapshot.research=[{mode:'SHADOW',label:'bad',status:'SHADOW_CANDIDATE',reasons:null}];assert.deepEqual(parseMarketState(s,now).research,[]);
+});
+
+test('hourly bands use twenty closes and population deviation', () => {
+ const values=Array.from({length:20},(_,i)=>100+i);
+ const bands=hourlyBollinger(values)!;
+ assert.ok(Math.abs(bands.upper-(109.5+2*Math.sqrt(33.25)))<1e-9);
+ assert.ok(Math.abs(bands.lower-(109.5-2*Math.sqrt(33.25)))<1e-9);
+ assert.deepEqual(hourlyBollinger(Array(20).fill(100)),{upper:100,lower:100});
+ assert.equal(hourlyBollinger(values.slice(1)),undefined);
+ assert.equal(hourlyBollinger([...values.slice(1),NaN]),undefined);
+});
+test('hourly display excludes forming bars and rejects stale or gapped data', () => {
+ const end=1800000000000;
+ const bars=Array.from({length:21},(_,i)=>[end-(20-i)*3600000,0,0,0,100+i,0,end-(19-i)*3600000-1]);
+ assert.equal(closedHourlyCloses(bars,end+500).length,20);
+ assert.equal(closedHourlyCloses(bars,end+500).at(-1),119);
+ assert.deepEqual(closedHourlyCloses(bars,end+7200000),[]);
+ assert.deepEqual(closedHourlyCloses(bars.filter((_,i)=>i!==10),end+500),[]);
+});
+test('bands come from healthy snapshots and invalid values are hidden',()=>{
+ const s:any=state();s.snapshot.macro.bollinger={upper:110,lower:90};
+ assert.deepEqual(parseMarketState(s,now).hourlyBollinger,{upper:110,lower:90});
+ assert.equal(parseMarketState(s,now+10001).hourlyBollinger,undefined);
+ s.snapshot.macro.bollinger.lower=120;assert.equal(parseMarketState(s,now).hourlyBollinger,undefined);
+});
+
+test('only validated cloud data can report synchronized trend',()=>{
+ assert.equal(parseMarketState(state(),now).stateSource,'SERVER');
+ assert.equal(parseMarketState(state(),now+10001).stateSource,'UNAVAILABLE');
+});
+
+test('connection failure never promotes local quotes to a cloud trend',async()=>{
+ const originalFetch=globalThis.fetch;
+ const originalStorage=Object.getOwnPropertyDescriptor(globalThis,'localStorage');
+ let calls=0;
+ try {
+  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:()=>null}});
+  globalThis.fetch=async()=>{calls++;throw new Error('unexpected fallback');};
+  const result=await fetchMarketState();
+  assert.equal(result.dataReady,false);assert.equal(result.stateSource,'UNAVAILABLE');
+  assert.equal(result.allowLongBreakout,false);assert.equal(calls,0);
+ } finally {
+  globalThis.fetch=originalFetch;
+  if(originalStorage)Object.defineProperty(globalThis,'localStorage',originalStorage);
+  else delete (globalThis as any).localStorage;
+ }
 });

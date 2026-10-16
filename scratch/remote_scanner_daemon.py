@@ -723,6 +723,10 @@ def start_model_library_server():
             if not self._authorized():
                 return self._json(401, {"ok": False})
             parsed = urllib.parse.urlparse(self.path)
+            if parsed.path == '/model-library/ai-state':
+                if not RUNTIME or not hasattr(RUNTIME, 'ai'):
+                    return self._json(503, {'ok': False, 'error': 'AI_ENGINE_UNAVAILABLE'})
+                return self._json(200, RUNTIME.ai.status())
             if parsed.path == '/model-library/strategy-settings':
                 return self._json(200,{'ok':True,**RUNTIME.settings.get()})
             if parsed.path == '/model-library/market-state':
@@ -758,7 +762,7 @@ def start_model_library_server():
             if not self._authorized():
                 return self._json(401, {"ok": False})
             route = urllib.parse.urlparse(self.path).path
-            if route not in ("/model-library/strategy-settings", "/model-library/action", "/model-library/position-review", "/model-library/exit-device", "/model-library/exit-receipt", "/model-library/exit-device-status"):
+            if route not in ("/model-library/strategy-settings", "/model-library/action", "/model-library/position-review", "/model-library/exit-device", "/model-library/exit-receipt", "/model-library/exit-device-status", "/model-library/ai-config", "/model-library/ai-trigger", "/model-library/ai-verify"):
                 return self._json(404, {"ok": False})
             try:
                 length = int(self.headers.get("Content-Length") or 0)
@@ -801,6 +805,23 @@ def start_model_library_server():
                 device = __import__('hashlib').sha256(self.headers.get('X-Library-Token','').encode()).hexdigest()
                 result = RUNTIME.store.review_position_notice(notice_id,device,int(time.time()*1000))
                 return self._json(200 if result['ok'] else 409,result)
+            if route == '/model-library/ai-config':
+                if not RUNTIME or not hasattr(RUNTIME, 'ai'):
+                    return self._json(503, {'ok': False, 'error': 'AI_ENGINE_UNAVAILABLE'})
+                try:
+                    return self._json(200, {'ok': True, 'config': RUNTIME.ai.set_config(payload)})
+                except ValueError as exc:
+                    return self._json(400, {'ok': False, 'error': str(exc)})
+            if route == '/model-library/ai-verify':
+                if not RUNTIME or not hasattr(RUNTIME,'ai'):
+                    return self._json(503,{'ok':False,'error':'AI_ENGINE_UNAVAILABLE'})
+                res=RUNTIME.ai.verify_connection()
+                return self._json(200 if res['ok'] else 400,res)
+            if route == '/model-library/ai-trigger':
+                if not RUNTIME or not hasattr(RUNTIME, 'ai'):
+                    return self._json(503, {'ok': False, 'error': 'AI_ENGINE_UNAVAILABLE'})
+                res = RUNTIME.ai.execute_analysis(trigger_reason='MANUAL_TRIGGER')
+                return self._json(200 if res.get('ok') else 400, res)
             result = apply_user_action(payload)
             return self._json(200 if result.get("ok") else 400, result)
 
@@ -903,7 +924,9 @@ def send_fcm_alert(title: str, body: str, data: Optional[dict] = None) -> bool:
         logger.info("[ALERT SIMULATED] %s\n%s", title, body)
         return False
     try:
-        payload_data = data or {}
+        payload_data = dict(data or {})
+        payload_data["title"] = str(title)
+        payload_data["body"] = str(body)
         remaining_ms = int(payload_data.get("expiresAt", 0)) - int(time.time() * 1000)
         if remaining_ms <= 0:
             return False

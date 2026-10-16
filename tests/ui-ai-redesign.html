@@ -1,0 +1,9 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#101116;color:white"><div id="root"></div><script type="module">
+import React from 'react';import {createRoot} from 'react-dom/client';import '/src/index.css';
+localStorage.setItem('cryptog_device_connection_v1',JSON.stringify({url:'https://fixture.invalid',token:'fixture_credential_12345678901234567890'}));
+const buy=new URLSearchParams(location.search).has('buy');
+const ev={id:'fixture',atMs:Date.now(),expiresAt:Date.now()+300000,isBuy:buy,summaryZh:'盘口卖压占优，反弹缩量，等待企稳确认。',cardText:'【触发信号时间】10月16日 09:30\n【买入机会】区间震荡 $81,000–81,100\n【买入理由】箱体下沿企稳回升\n【止盈点位】$82,000（+1.1%）\n【止损点位】$80,300（-0.9%）\n【建议持有时间】10分钟–4小时'};
+window.fetch=async()=>new Response(JSON.stringify({ok:true,hasApiKey:true,config:{enabled:true,provider:'DEEPSEEK',model:'deepseek-chat',connectionStatus:'VERIFIED'},lastEvaluation:ev,recentEvaluations:[ev],evalCount:2,buyCount:buy?1:0}),{headers:{'Content-Type':'application/json'}});
+const {AIQuantView}=await import('/src/components/views/AIQuantView.tsx');
+createRoot(document.getElementById('root')).render(React.createElement('main',{style:{padding:12}},React.createElement('p',{style:{fontSize:10,color:'#9aa0a6'}},'布局验收 · 合成数据'),React.createElement(AIQuantView)));
+</script>

@@ -38,6 +38,9 @@ class Runtime:
         self.exit_enabled = os.environ.get('CRYPTOG_ENABLE_EXIT_ALERTS') == '1'
         self.exit_worker = ExitWorker(self.exit_delivery,self.stop,self.library.send_position_hint,
             self.exit_authorized,lambda:bool(self.heartbeat_ms and 0<=int(time.time()*1000)-self.heartbeat_ms<=10000),self.exit_enabled)
+        from .ai_engine import AIEngine, AIAnalystWorker
+        self.ai = AIEngine(self.store, self.cache, self.library.send_fcm_alert, self.stop)
+        self.ai_worker = AIAnalystWorker(self.ai, self.stop)
 
     def exit_authorized(self, fingerprint):
         try:
@@ -48,7 +51,8 @@ class Runtime:
     def send(self, event_id, signal):
         if not self.heartbeat_ms or int(time.time()*1000)-self.heartbeat_ms>10000:
             return False
-        if not self.settings.get()['activeStrategies'].get(signal['strategy'],False): return False
+        if not self.settings.get()['activeStrategies'].get(signal['strategy'],False):
+            return 'DISABLED_BY_CONFIG'
         if not self.library.FCM_INITIALIZED: return False
         self.library.record_delivery(event_id,'ATTEMPT')
         result = self.library.send_fcm_alert(('Crypto-G 实验买入候选（未验证）' if signal.get('rule_version')=='experimental-v1' else 'Crypto-G 买入候选（打开复核）'),
@@ -64,10 +68,18 @@ class Runtime:
         now = int(time.time()*1000)
         with self.store.lock:
             observation_messages=[__import__('json').loads(r[0]) for r in self.store.db.execute('SELECT payload FROM observation_queue ORDER BY expires DESC LIMIT 200').fetchall()]
+        obs_health = self.observer.health(now) if hasattr(self.observer, 'health') else {
+            'healthy': self.observer.is_alive() and bool(getattr(self.observer, 'heartbeat', 0) and now - self.observer.heartbeat <= 10000),
+            'error': getattr(self.observer, 'error', None),
+        }
         return {'observationMessages':observation_messages,'ok':True,'schema':1,'mode':'BASELINE' if self.live else 'SHADOW',
                 'snapshot':result,'runtimeHealthy':bool(self.heartbeat_ms and now-self.heartbeat_ms<=10000),
                 'feedHealthy':self.feed.is_alive() and bool(self.feed.heartbeat_ms and now-self.feed.heartbeat_ms<=10000),
                 'notificationHealthy':self.worker.is_alive() and bool(self.worker.heartbeat_ms and now-self.worker.heartbeat_ms<=10000),
+                'observerHealthy': obs_health['healthy'],
+                'observerError': obs_health.get('error'),
+                'observationQueue': {k: obs_health[k] for k in ('pending', 'expired', 'sent') if k in obs_health},
+                'aiState': self.ai.status() if hasattr(self, 'ai') else None,
                 'feedError':self.feed.error,'notificationError':self.worker.error,'outbox':self.store.health(),
                 'positions':positions,'positionNotifications':'DEVICE_PUSH_UNVERIFIED' if self.exit_enabled else 'SHADOW_EVENTS_ONLY',
                 'exitDelivery':self.exit_delivery.health(),'exitNotificationError':self.exit_worker.error,
@@ -77,6 +89,7 @@ class Runtime:
         self.library.load_alerted_setups()
         self.api = self.library.start_model_library_server()
         self.feed.start(); self.worker.start(); self.exit_worker.start(); self.observer.start()
+        if hasattr(self, 'ai_worker'): self.ai_worker.start()
         try:
             while not self.stop.is_set():
                 self.cache.changed.wait(1)
@@ -125,4 +138,5 @@ class Runtime:
             self.api.shutdown()
             self.api.server_close()
             self.observer.join(10); self.feed.join(10); self.worker.join(10); self.exit_worker.join(10)
+            if hasattr(self, 'ai_worker'): self.ai_worker.join(10)
             if not self.observer.is_alive() and not self.worker.is_alive() and not self.exit_worker.is_alive(): self.store.close()

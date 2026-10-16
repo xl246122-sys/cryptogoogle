@@ -32,6 +32,20 @@ def fixture():
     return cache
 
 class StageOneTests(unittest.TestCase):
+    def test_hourly_bollinger_closed_population_variance(self):
+        from cryptog.market_state import diagnose_macro_trend
+        import math
+        candles = [{"close": 100+i, "high": 101+i, "low": 99+i, "open": 100+i,
+                    "volume": 10, "close_time": NOW-(20-i)*3600000, "is_closed": True} for i in range(20)]
+        ticker = {"price": 119, "change24h": 0}
+        with at_time(NOW):
+            bands = diagnose_macro_trend(candles, ticker)["bollinger"]
+            self.assertAlmostEqual(bands["upper"], 109.5+2*math.sqrt(33.25))
+            self.assertAlmostEqual(bands["lower"], 109.5-2*math.sqrt(33.25))
+            forming = dict(candles[-1], close=99999, close_time=NOW+3600000, is_closed=False)
+            self.assertEqual(diagnose_macro_trend(candles+[forming], ticker)["bollinger"], bands)
+            self.assertIsNone(diagnose_macro_trend(candles[:19], ticker)["bollinger"])
+
     def test_depth_bridge_duplicate_and_gap(self):
         c=fixture(); self.assertTrue(c.snapshot(NOW)['healthy'])
         duplicate={'e':'depthUpdate','s':'BTCUSDT','E':NOW,'U':99,'u':101,'b':[['100.29','0']],'a':[]}

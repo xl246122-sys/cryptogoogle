@@ -1,4 +1,5 @@
 import {QuickPaperPanel} from '../QuickPaperPanel';
+import {TwinCard} from '../HorizonPanels';
 import React, { useState, useEffect } from 'react';
 import { MarketTicker, WatchlistItem } from '../../types/crypto';
 import {
@@ -91,6 +92,7 @@ export const WatchlistView: React.FC<WatchlistViewProps> = ({
       </div>
 
       <QuickPaperPanel ticker={btcTicker}/>
+      <TwinCard price={livePrice} item={btcItem} />
       <details className="text-xs text-gray-400"><summary className="py-2">实际成交补录与旧版持仓（展开）</summary>
       {/* Primary BTC Position Dashboard Component */}
       <BtcPositionDashboard

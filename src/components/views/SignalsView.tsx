@@ -1,4 +1,5 @@
 import {MessagePanel} from '../MessagePanel';
+import {PlanFacts} from '../HorizonPanels';
 import {DecisionReasons} from '../DecisionReasons';
 import React, { useState } from 'react';
 import { TradeSignal, MacroTrendAnalysis } from '../../types/crypto';
@@ -189,6 +190,7 @@ export const SignalsView: React.FC<SignalsViewProps> = ({
                 <div className="text-xs font-semibold text-[#8ab4f8] flex items-center gap-1">
                   <span>{sig.strategyNameZh}</span>
                 </div>
+                <PlanFacts signal={sig} />
 
                 {/* Price targets grid */}
                 <div className="grid grid-cols-3 gap-2 p-2 rounded-xl bg-[#141822] border border-[#252b3a] text-xs font-mono">

@@ -69,7 +69,7 @@ export interface VolatilityRegime {
 }
 
 export interface MacroTrendAnalysis {
-  stateSource?: 'SERVER' | 'UNAVAILABLE';
+  stateSource?: 'SERVER' | 'UNAVAILABLE' | 'CACHE';
   rejectionReasons?: string[];
   research?: {label:string;status:string;reasons:string[]}[];
   hourlyTrend: 'BEARISH' | 'BULLISH' | 'RANGING';
@@ -87,13 +87,49 @@ export interface MacroTrendAnalysis {
   minRequiredDropPct?: number;
   volatility?: VolatilityRegime;
   dataReady?: boolean;
+  layers?: { d1: string; h4: string; h1: string; label: string; score: number };
+  levels?: { name: string; price: number }[];
+  watchCandidates?: { module: string; name: string; expiresAt?: number; tierLabel?: string; issue?: string }[];
+  lab?: ReleaseLab;
+  freshness?: { context: string; derivatives: string };
+  breaker?: { state: string; reason?: string; pausedUntil?: number; consecutiveStops?: number; dayR?: number };
+}
+
+export interface ReleaseModule {
+  module: string;
+  stage: string;
+  label: string;
+  push: boolean;
+  tierLabel: string;
+  records: number;
+  remainingMs?: number | null;
+  gaps?: string[];
+}
+
+export interface ReleaseLab {
+  source: 'SERVER' | 'LOCAL';
+  modules: ReleaseModule[];
+  l1: { status?: string; applied: boolean; samples?: number | null; minSamples?: number; proposal?: { pThreshold?: number; entryOffsetPct?: number; stopBufferPct?: number } };
+  promotions: number;
+  daily?: { day?: string; summary?: string } | null;
+  hypotheses: { module?: string; feature?: string; claim?: string; status?: string; applied: boolean }[];
+  veto?: { vetoEnabled?: boolean; vetoed?: number; passed?: number; vetoedMeanR?: number | null; passedMeanR?: number | null } | null;
+  gates?: { minTrades?: number; minExpectancyPct?: number; minWinRate?: number; minProfitFactor?: number };
+  continuity?: {
+    cost?: { month?: string; frictionPct?: number; floorPct?: number; measuredPct?: number | null; source?: string; applied: boolean };
+    environment?: { quarter?: string; status?: string; cutoff?: number | null; priorCutoff?: number; samples?: number; applied: boolean };
+    environmentOpen?: string | null;
+  } | null;
+  note?: string;
 }
 
 export interface TradeRules {
-  model: 'BREAKOUT' | 'REBOUND' | 'RANGE';
-  ruleVersion: 'three-models-v1' | 'experimental-v1';
+  model: 'BREAKOUT' | 'REBOUND' | 'RANGE' | 'PULLBACK';
+  ruleVersion: 'three-models-v1' | 'experimental-v1' | 'three-models-v2' | 'experimental-v2' | 'short-horizon-v1' | 'short-horizon-v2';
   maxHoldMinutes: number;
   minNetTp1: number;
+  minNetRr?: number;
+  frictionPct?: number;
   maxNetTarget: number | null;
   invalidationPrice: number;
   tp1Fraction: number;
@@ -124,6 +160,10 @@ export interface TradeSignal {
   confirmationTime?: number; // 确认K线收盘时间戳
   engineVersion?: string; // 引擎版本
   expiresAt?: number;
+  tierLabel?: string;
+  aiExplain?: string;
+  positionFractionPct?: number;
+  timeStopMinutes?: number;
   entryMin?: number;
   entryMax?: number;
   breakoutLevel?: number;

@@ -19,14 +19,15 @@ def make_snapshot(price=67000.0, drop_recent=False):
     for tf, count in [('1m', 30), ('5m', 24), ('15m', 16), ('1h', 12)]:
         bars = []
         for i in range(count):
-            t = NOW - (count - i) * 60000
+            step = {'1m':60000,'5m':300000,'15m':900000,'1h':3600000}[tf]
+            t = NOW - (count - i) * step
             p = price
             if drop_recent and tf == '1m' and i >= count - 3:
                 # 1.5% drop in last 3 minutes
                 p = price * (1 - (i - count + 4) * 0.006)
             bars.append({
                 'time': t,
-                'close_time': t + 59999,
+                'close_time': t + step - 1,
                 'open': p,
                 'high': p + 20,
                 'low': p - 20,
@@ -36,6 +37,8 @@ def make_snapshot(price=67000.0, drop_recent=False):
                 'is_closed': True
             })
         series[tf] = bars
+
+    series['5m'][-4]['high'] = price + 1400
 
     return {
         'atMs': NOW,

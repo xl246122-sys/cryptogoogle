@@ -3,6 +3,8 @@ import { connection } from './serverConnection';
 export const exitLabels: Record<string,string> = {
   STOP_EXIT:'止损退出', INVALIDATION_EXIT:'结构失效退出', TP1_PARTIAL_EXIT:'第一目标分批退出',
   TP2_EXIT:'第二目标退出', TIME_EXIT:'持有时间到期', TIME_EXIT_APPROXIMATE:'按近似成交时间估算到期',
+  BREAKEVEN_EXIT:'保本止损退出', ENV_EXIT:'环境急跌退出', TRAIL_EXIT:'均线跟踪退出',
+  TIME_STOP_EXIT:'90分钟动能不足', STOP_NEAR_WARNING:'接近止损', STRUCTURE_WARNING:'结构失效预警',
 };
 export interface ExitNotice { id:string; kind:string; quantity:number; atMs:number; }
 export interface PositionReport {

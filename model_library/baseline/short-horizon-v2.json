@@ -1,0 +1,362 @@
+{
+  "ruleVersion": "short-horizon-v2",
+  "frictionPct": 0.24,
+  "nTrials": 1,
+  "paperNotionalUsdt": 500,
+  "exitResolution": "5m",
+  "fill": "限价在进场区间内，有效期为触发周期 2 根 K 线；价格离开区间上方 0.25% 不成交",
+  "split": "样本跨度不少于 200 天时，最后 122 天为样本外，其前 6 小时为禁区；更短的样本用前 2/3 与后 1/3",
+  "startMs": 1737849600000,
+  "endMs": 1792217699999,
+  "cutMs": 1781676899999,
+  "start": "2025-01-26T08:00:00+08:00",
+  "end": "2026-10-17T14:14:59.999000+08:00",
+  "waves": {
+    "atLeast1Pct": 1645,
+    "perDay1Pct": 2.614180006338536,
+    "atLeast1_5Pct": 896,
+    "perDay1_5Pct": 1.4238937906865219,
+    "recall1_5Early": 0.29017857142857145
+  },
+  "coverage": {
+    "1m": {
+      "count": 87000,
+      "start": 1729146420000,
+      "end": 1734366360000
+    },
+    "5m": {
+      "count": 210239,
+      "start": 1729146000000,
+      "end": 1792217400000
+    },
+    "15m": {
+      "count": 70079,
+      "start": 1729146600000,
+      "end": 1792216800000
+    },
+    "1h": {
+      "count": 17519,
+      "start": 1729148400000,
+      "end": 1792213200000
+    },
+    "4h": {
+      "count": 4379,
+      "start": 1729152000000,
+      "end": 1792195200000
+    },
+    "1d": {
+      "count": 729,
+      "start": 1729209600000,
+      "end": 1792108800000
+    },
+    "funding_rates": {
+      "count": 0,
+      "start": null,
+      "end": null
+    },
+    "open_interest": {
+      "count": 0,
+      "start": null,
+      "end": null
+    },
+    "taker_ratio": {
+      "count": 0,
+      "start": null,
+      "end": null
+    }
+  },
+  "modules": {
+    "S1": {
+      "candidates": 1616,
+      "blocked": 1429,
+      "filled": 4,
+      "candidatesPerDay": 2.5680941582024768,
+      "inSample": {
+        "trades": 4,
+        "winRate": 0.25,
+        "expectancyPct": -0.53665,
+        "profitFactor": 0.226646,
+        "bootstrapLower95": -1.04375,
+        "sharpe": -0.669279,
+        "dsr": 0.191943,
+        "perDay": 0.007885,
+        "nTrials": 1
+      },
+      "outOfSample": {
+        "trades": 0,
+        "winRate": null,
+        "expectancyPct": null,
+        "profitFactor": null,
+        "bootstrapLower95": null,
+        "sharpe": null,
+        "dsr": null,
+        "perDay": 0.0,
+        "nTrials": 1
+      },
+      "all": {
+        "trades": 4,
+        "winRate": 0.25,
+        "expectancyPct": -0.53665,
+        "profitFactor": 0.226646,
+        "bootstrapLower95": -1.04375,
+        "sharpe": -0.669279,
+        "dsr": 0.191943,
+        "perDay": 0.006357,
+        "nTrials": 1
+      },
+      "purged": 0,
+      "diagnosticNetPct": {
+        "0.5": -0.513189,
+        "1.0": -0.374871,
+        "2.0": -0.40551
+      },
+      "promotion": {
+        "passes": false,
+        "gaps": [
+          "样本外交易数 0 < 60",
+          "扣费后期望值 无 < 0.10%",
+          "自助法 95% 下限未大于 0",
+          "胜率低于 52%",
+          "盈利因子低于 1.30",
+          "交易级频率不在 0.5–6 条/天"
+        ],
+        "nTrials": 1,
+        "pbo": null
+      },
+      "launch": {
+        "passes": false,
+        "checks": {
+          "winRate": false,
+          "expectancy": false,
+          "recall": false
+        },
+        "recall": 0.17299107142857142,
+        "stopAlert": "止损分类在每次盘口更新时执行，历史 K 线不能测量 5 秒延迟"
+      }
+    },
+    "S2": {
+      "candidates": 912,
+      "blocked": 0,
+      "filled": 159,
+      "candidatesPerDay": 1.4493204655202097,
+      "inSample": {
+        "trades": 125,
+        "winRate": 0.224,
+        "expectancyPct": -0.22193,
+        "profitFactor": 0.424989,
+        "bootstrapLower95": -0.309035,
+        "sharpe": -0.380359,
+        "dsr": 0.00034,
+        "perDay": 0.246422,
+        "nTrials": 1
+      },
+      "outOfSample": {
+        "trades": 34,
+        "winRate": 0.176471,
+        "expectancyPct": -0.306003,
+        "profitFactor": 0.256127,
+        "bootstrapLower95": -0.440668,
+        "sharpe": -0.6108,
+        "dsr": 0.010478,
+        "perDay": 0.278689,
+        "nTrials": 1
+      },
+      "all": {
+        "trades": 159,
+        "winRate": 0.213836,
+        "expectancyPct": -0.239908,
+        "profitFactor": 0.387037,
+        "bootstrapLower95": -0.313847,
+        "sharpe": -0.423572,
+        "dsr": 1.9e-05,
+        "perDay": 0.252678,
+        "nTrials": 1
+      },
+      "purged": 0,
+      "diagnosticNetPct": {
+        "0.5": -0.269546,
+        "1.0": -0.25263,
+        "2.0": -0.235633
+      },
+      "promotion": {
+        "passes": false,
+        "gaps": [
+          "样本外交易数 34 < 60",
+          "扣费后期望值 -0.3060% < 0.10%",
+          "自助法 95% 下限未大于 0",
+          "胜率低于 52%",
+          "盈利因子低于 1.30",
+          "交易级频率不在 0.5–6 条/天"
+        ],
+        "nTrials": 1,
+        "pbo": null
+      },
+      "launch": {
+        "passes": false,
+        "checks": {
+          "winRate": false,
+          "expectancy": false,
+          "recall": false
+        },
+        "recall": 0.0859375,
+        "stopAlert": "止损分类在每次盘口更新时执行，历史 K 线不能测量 5 秒延迟"
+      }
+    },
+    "S3": {
+      "candidates": 293,
+      "blocked": 0,
+      "filled": 5,
+      "candidatesPerDay": 0.4656259828919095,
+      "inSample": {
+        "trades": 5,
+        "winRate": 0.2,
+        "expectancyPct": -0.41946,
+        "profitFactor": 0.00954,
+        "bootstrapLower95": -0.63072,
+        "sharpe": -1.402603,
+        "dsr": 0.025621,
+        "perDay": 0.009857,
+        "nTrials": 1
+      },
+      "outOfSample": {
+        "trades": 0,
+        "winRate": null,
+        "expectancyPct": null,
+        "profitFactor": null,
+        "bootstrapLower95": null,
+        "sharpe": null,
+        "dsr": null,
+        "perDay": 0.0,
+        "nTrials": 1
+      },
+      "all": {
+        "trades": 5,
+        "winRate": 0.2,
+        "expectancyPct": -0.41946,
+        "profitFactor": 0.00954,
+        "bootstrapLower95": -0.63072,
+        "sharpe": -1.402603,
+        "dsr": 0.025621,
+        "perDay": 0.007946,
+        "nTrials": 1
+      },
+      "purged": 0,
+      "diagnosticNetPct": {
+        "0.5": -0.223551,
+        "1.0": -0.207578,
+        "2.0": -0.477936
+      },
+      "promotion": {
+        "passes": false,
+        "gaps": [
+          "样本外交易数 0 < 60",
+          "扣费后期望值 无 < 0.10%",
+          "自助法 95% 下限未大于 0",
+          "胜率低于 52%",
+          "盈利因子低于 1.30",
+          "交易级频率不在 0.5–6 条/天"
+        ],
+        "nTrials": 1,
+        "pbo": null
+      },
+      "launch": {
+        "passes": false,
+        "checks": {
+          "winRate": false,
+          "expectancy": false,
+          "recall": false
+        },
+        "recall": 0.027901785714285716,
+        "stopAlert": "止损分类在每次盘口更新时执行，历史 K 线不能测量 5 秒延迟"
+      }
+    },
+    "S4": {
+      "candidates": 151,
+      "blocked": 0,
+      "filled": 0,
+      "candidatesPerDay": 0.23996424374292946,
+      "inSample": {
+        "trades": 0,
+        "winRate": null,
+        "expectancyPct": null,
+        "profitFactor": null,
+        "bootstrapLower95": null,
+        "sharpe": null,
+        "dsr": null,
+        "perDay": 0.0,
+        "nTrials": 1
+      },
+      "outOfSample": {
+        "trades": 0,
+        "winRate": null,
+        "expectancyPct": null,
+        "profitFactor": null,
+        "bootstrapLower95": null,
+        "sharpe": null,
+        "dsr": null,
+        "perDay": 0.0,
+        "nTrials": 1
+      },
+      "all": {
+        "trades": 0,
+        "winRate": null,
+        "expectancyPct": null,
+        "profitFactor": null,
+        "bootstrapLower95": null,
+        "sharpe": null,
+        "dsr": null,
+        "perDay": 0.0,
+        "nTrials": 1
+      },
+      "purged": 0,
+      "diagnosticNetPct": {
+        "0.5": null,
+        "1.0": null,
+        "2.0": null
+      },
+      "promotion": {
+        "passes": false,
+        "gaps": [
+          "样本外交易数 0 < 60",
+          "扣费后期望值 无 < 0.10%",
+          "自助法 95% 下限未大于 0",
+          "胜率低于 52%",
+          "盈利因子低于 1.30",
+          "交易级频率不在 0.5–6 条/天"
+        ],
+        "nTrials": 1,
+        "pbo": null
+      },
+      "launch": {
+        "passes": false,
+        "checks": {
+          "winRate": false,
+          "expectancy": false,
+          "recall": false
+        },
+        "recall": 0.013392857142857142,
+        "stopAlert": "止损分类在每次盘口更新时执行，历史 K 线不能测量 5 秒延迟"
+      }
+    },
+    "S5": {
+      "candidates": 49,
+      "filled": 0,
+      "push": false,
+      "perDay": 0.07786919167816916,
+      "forwardNetPct": {
+        "30": -0.2856839477810598,
+        "90": -0.22380837760890393,
+        "360": -0.0692881214410202
+      },
+      "researchExpectancy360": -0.0692881214410202,
+      "promotion": {
+        "passes": false,
+        "gaps": [
+          "S5 只做研究，不进入交易级"
+        ]
+      }
+    }
+  },
+  "note": "单一先验参数，nTrials=1，因此 DSR 的「试参超过 20 组」门槛不适用，PBO 不计算。诊断用的 0.5R/1R/2R 不参与选择。",
+  "libraryNote": "1 分钟 K 线仍在续传，基线出场用的是 5 分钟 K 线。资金费率接口本次返回 HTTP 错误，改由守护进程启动后累积。"
+}

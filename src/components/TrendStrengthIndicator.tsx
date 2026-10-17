@@ -3,12 +3,17 @@ import {Activity, TrendingDown, TrendingUp} from 'lucide-react';
 import type {MacroTrendAnalysis} from '../types/crypto';
 
 interface Props {macroTrend:MacroTrendAnalysis;currentPrice?:number;className?:string}
+export function environmentBias(state?: string): '空头' | '非空头' | '—' {
+  if (state === '空头' || state === '空头反弹') return '空头';
+  if (state === '多头' || state === '多头回调') return '非空头';
+  return '—';
+}
 export function TrendStrengthIndicator({macroTrend:m,className=''}:Props){
-  const ready=m.dataReady===true && Number.isFinite(m.hourlyRsi) && m.hourlyRsi>=0 && m.hourlyRsi<=100 && Number.isFinite(m.hourlyMa20) && m.hourlyMa20>0;
+  const ready=(m.dataReady===true || m.stateSource==='CACHE') && Number.isFinite(m.hourlyRsi) && m.hourlyRsi>=0 && m.hourlyRsi<=100 && Number.isFinite(m.hourlyMa20) && m.hourlyMa20>0;
   const bearish=m.hourlyTrend==='BEARISH',bullish=m.hourlyTrend==='BULLISH';
   const color=!ready?'#9aa0a6':bearish?'#f28b82':bullish?'#81c995':'#fdd663';
   const Icon=bearish?TrendingDown:bullish?TrendingUp:Activity;
-  const label=!ready?'待更新':bearish?'空头背景':bullish?'多头背景':'震荡背景';
+  const label=m.stateSource==='CACHE'?'上次趋势 · 同步中':!ready?'待更新':bearish?'空头背景':bullish?'多头背景':'震荡背景';
   return <section aria-label="1小时趋势强度" className={`rounded-2xl border px-3.5 py-3 ${className}`} style={{borderColor:color+'40',background:`linear-gradient(120deg, ${color}0d, #151820 75%)`}}>
     <div className="flex items-center justify-between gap-2">
       <h2 className="text-[13px] font-semibold text-gray-100">1小时趋势强度 <span className="text-[10px] font-normal text-gray-500">BTC</span></h2>
@@ -20,6 +25,13 @@ export function TrendStrengthIndicator({macroTrend:m,className=''}:Props){
       {ready && <span className="absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_7px_#ffffff40] transition-[left] duration-700 ease-out motion-reduce:transition-none" style={{left:`${m.hourlyRsi}%`,background:color}}/>}
     </div>
     <div className="flex justify-between gap-2 text-[11px] tabular-nums"><span className="text-gray-400">RSI <strong style={{color}}>{ready?m.hourlyRsi.toFixed(2):'—'}</strong></span><span className="text-gray-400">MA20 <span className="text-gray-200">{ready?'$'+m.hourlyMa20.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'—'}</span></span></div>
+    <div className="mt-2 grid grid-cols-3 gap-1.5" aria-label="三层空头">
+      {([['1D', m.layers?.d1], ['4H', m.layers?.h4], ['1H', m.layers?.h1]] as const).map(([name, state]) => {
+        const bias = environmentBias(state);
+        const tone = bias === '空头' ? '#f28b82' : bias === '非空头' ? '#81c995' : '#9aa0a6';
+        return <div key={name} className="rounded-lg bg-black/25 px-1 py-1 text-center"><div className="text-[10px] text-gray-500">{name}</div><strong className="text-[11px]" style={{color:tone}}>{bias}</strong></div>;
+      })}
+    </div>
     <details className="mt-2 text-[10px] text-gray-500">
       <summary className="cursor-pointer select-none">{ready?'收盘数据 · 非买入指令':'行情不可用 · 暂停解读'}<span className="ml-2 text-gray-400">查看依据</span></summary>
       <div className="mt-2 space-y-1 border-t border-white/5 pt-2 text-[11px] leading-relaxed"><p>{m.regimeNameZh}</p><p>{m.regimeDescription}</p><p>{m.biasZh}</p><p>彩条直接表示服务端 1h RSI（0–100），不是胜率或综合评分；背景分类以服务端判断为准。</p></div>

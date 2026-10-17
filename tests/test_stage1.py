@@ -46,6 +46,28 @@ class StageOneTests(unittest.TestCase):
             self.assertEqual(diagnose_macro_trend(candles+[forming], ticker)["bollinger"], bands)
             self.assertIsNone(diagnose_macro_trend(candles[:19], ticker)["bollinger"])
 
+    def test_live_hour_moves_without_replacing_the_closed_decision(self):
+        from cryptog.market_state import live_hourly_reading, present_market, diagnose_macro_trend
+        bars = [{"close": 100 + (i % 3), "high": 101, "low": 99, "open": 100,
+                 "close_time": NOW - i, "is_closed": True} for i in range(20)]
+        ticker = {"price": 130, "change24h": 0}
+        with at_time(NOW):
+            closed = diagnose_macro_trend(bars, ticker)
+            live = live_hourly_reading(bars, 130)
+        self.assertNotEqual(live["liveRsi"], closed["rsi"])
+        self.assertNotEqual(round(live["liveMa20"], 2), round(closed["ma20"], 2))
+        decision = {"macro": {**closed, **live}, "shortHorizonV2": {
+            "env": {"states": {"h1": "DOWN"}, "score": -10, "label": "closed", "gates": {"S1": True}},
+            "displayEnv": {"states": {"h1": "UP"}, "score": 20, "label": "live"},
+        }}
+        shown = present_market(copy.deepcopy(decision))
+        self.assertEqual(decision["macro"]["rsi"], closed["rsi"])
+        self.assertEqual(shown["macro"]["rsi"], live["liveRsi"])
+        self.assertEqual(shown["macro"]["ma20"], live["liveMa20"])
+        self.assertEqual(shown["shortHorizonV2"]["env"]["states"]["h1"], "UP")
+        self.assertEqual(shown["shortHorizonV2"]["env"]["gates"]["S1"], True)
+        self.assertEqual(decision["shortHorizonV2"]["env"]["states"]["h1"], "DOWN")
+
     def test_depth_bridge_duplicate_and_gap(self):
         c=fixture(); self.assertTrue(c.snapshot(NOW)['healthy'])
         duplicate={'e':'depthUpdate','s':'BTCUSDT','E':NOW,'U':99,'u':101,'b':[['100.29','0']],'a':[]}
@@ -84,7 +106,7 @@ class StageOneTests(unittest.TestCase):
         s=fixture().snapshot(NOW); original=copy.deepcopy(s)
         a=evaluate(s); b=evaluate(s)
         self.assertEqual(a,b); self.assertEqual(s,original)
-        self.assertEqual(a['ruleVersion'],'three-models-v1')
+        self.assertEqual(a['ruleVersion'],'three-models-v2')
         self.assertNotIn('tp1',a['volatility'])
 
     def test_future_bar_and_nonfinite_rejected_even_in_healthy_input(self):
@@ -98,7 +120,7 @@ class StageOneTests(unittest.TestCase):
         with at_time(NOW): self.assertEqual(clock.time(),NOW/1000)
         self.assertNotEqual(clock.time(),NOW/1000)
 
-    def test_frozen_v112_strategy_parity(self):
+    def test_frozen_v112_logic_parity_with_updated_profit_floor(self):
         from cryptog import strategy
         from cryptog.config import TRADE_POLICIES
         raw=(ROOT/'tests/fixtures/v112_rules.py').read_bytes()
@@ -110,8 +132,11 @@ class StageOneTests(unittest.TestCase):
         from cryptog import config
         ns.update({k:v for k,v in vars(config).items() if k.isupper()})
         frozen_config=json.loads((ROOT/'tests/fixtures/v112_config.json').read_text())
-        for key,value in frozen_config.items(): self.assertEqual(getattr(config,key),value)
+        for key,value in frozen_config.items():
+            if key not in ('MIN_NET_TP1','TRADE_POLICIES','RULE_VERSION'): self.assertEqual(getattr(config,key),value)
+        self.assertEqual(config.MIN_NET_TP1,.59)
         ns.update(frozen_config)
+        ns.update(MIN_NET_TP1=config.MIN_NET_TP1,TRADE_POLICIES=config.TRADE_POLICIES,RULE_VERSION=config.RULE_VERSION)
         names={'TechnicalIndicators','get_closed_candles','validate_market_data_quality','verify_micro_range_reversal',
                'diagnose_cascade_downtrend','_closed_breakout','entry_contract','observed_resistances','stable_range_box',
                'recent_crash_confirmed','model_targets','scan_symbol'}
@@ -131,7 +156,7 @@ class StageOneTests(unittest.TestCase):
                     self.assertEqual(before,after)
                     accepted+=int(after is not None)
         self.assertGreater(accepted,0,'Parity cannot pass solely by rejecting every fixture')
-        self.assertEqual(TRADE_POLICIES['RANGE']['min_net_tp1'],1.)
+        self.assertEqual(TRADE_POLICIES['RANGE']['min_net_tp1'],.59)
 
     def test_journal_conflict_replay_and_restart(self):
         path=pathlib.Path(tempfile.mkdtemp())/'events.db'

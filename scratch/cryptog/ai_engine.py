@@ -20,6 +20,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 from cryptography.fernet import Fernet
+from .config import MIN_GROSS_TP1, MIN_NET_TP1
 from .ai_policy import MODULES, rolling_windows, trade_plan, same_opportunity, alert_card, advance_plan
 
 logger = logging.getLogger("crypto-g.ai-engine")
@@ -34,26 +35,18 @@ DEFAULT_AI_CONFIG = {
     "intervalSeconds": 300,
     "eventTriggerEnabled": True,
     "eventCooldownSeconds": 180,
-    "maxHoldMinutes": 120,
-    "minNetTp1": 0.40,
+    "maxHoldMinutes": 360,
+    "minNetTp1": MIN_NET_TP1,
     "minNetRR": 1.10,
     "assumedFrictionPct": 0.11,
 }
 
-SYSTEM_PROMPT = """你是独立 BTCUSDT 现货买入分析引擎，不调用传统策略结论。
-只使用输入的币安现货数据。证据不足、结构冲突、目标缺乏依据时输出 is_buy=false。
-只允许三个模块：
-FLASH_DROP_REBOUND 暴跌反弹：毛止盈1%~6%，结构止损风险1%~2.5%，持有30~240分钟。
-RANGE_SUPPORT_BOUNCE 区间震荡：毛止盈1%~4%，结构止损风险0.8%~1.5%，持有10~240分钟。
-TREND_BREAKOUT_CONFIRM 上涨大趋势：已确认趋势突破或支撑回踩，结构目标与移动止损，持有120~720分钟。
-扫流动性、大单吸收、缩量蓄势只能作为三个模块的辅助证据，不能成为额外模块。
-止盈必须有真实阻力依据，止损必须位于输入中某根已收盘结构K线低点下方。
-不得为了凑收益范围移动结构止损或虚构阻力。净TP1>=0.40%、净RR>=1.10，摩擦0.11%。
-仅返回JSON。is_buy必须是真布尔值。买入时必须包含：
-scenario, entry_min, entry_max, target_tp1, target_tp2, stop_loss,
-hold_minutes（整数）, anchor_timeframe, anchor_time_ms（输入K线时间戳），
-summary_zh（一句价格行为理由，1~25字）。confidence为模型自评分，不是胜率。
-无合规机会时明确观望，不强求买入。"""
+SYSTEM_PROMPT = """你是 BTCUSDT 现货买入分析引擎。只使用输入的币安现货数据。
+手机短线持有 10 分钟到 4 小时。价格、止损和目标由输入里的 shortHorizon 契约计算，你不能改价。
+买入时 scenario 只能是契约给出的 module：FLUSH_RECLAIM（急跌收回）或 PULLBACK_RECLAIM（回踩收回）。
+契约为 null，或你判断结构冲突、证据不足时，is_buy=false，scenario=NONE。
+不要输出秒级急跌、也不要自己发明入场价。summary_zh 用 1~25 字说明原因。
+仅返回 JSON。is_buy 必须是真布尔值。confidence 是自评分，不是胜率。"""
 
 
 def build_ai_prompt(snapshot):
@@ -143,8 +136,10 @@ def build_ai_prompt(snapshot):
 
 【独立量化决策指令】：
 请充分发挥 AI 量化大脑的自主判断与模式识别特长，对多周期量价形态与盘口订单流进行全局综合推理。
-如果发现符合高胜率买入形态（如止跌反弹、支撑企稳、顺势突破回踩、诱空收复或大单吸收），且具备非对称盈亏比，证据充分且满足模块计划时才输出买入 (is_buy: true)，并给出包含最新 Ask 报价的精准建议买入区间 [entry_min, entry_max]、目标止盈与结构止损。
+如果发现符合待验证买入形态（如止跌反弹、支撑企稳、顺势突破回踩、诱空收复或大单吸收），且具备非对称盈亏比，证据充分且满足模块计划时才输出买入 (is_buy: true)，并给出包含最新 Ask 报价的精准建议买入区间 [entry_min, entry_max]、目标止盈与结构止损。
 若当前处于纯单边下坠无承接或空间不足，请输出 is_buy: false。直接返回纯 JSON 对象。"""
+    from .short_horizon import setup_from_snapshot
+    prompt += "\nshortHorizon契约（价格已计算，只能同意或否决）：" + json.dumps(setup_from_snapshot(snapshot, snapshot.get("atMs") or 0), ensure_ascii=False, default=str)
     prompt += "\n滚动现货窗口（分钟）：" + json.dumps(rolling_windows(snapshot), ensure_ascii=False)
     prompt += "\n可引用结构K线：" + json.dumps({tf:[{k:b[k] for k in ("time","low","high","close")} for b in bars[-48:]] for tf,bars in series.items()},ensure_ascii=False)
     return prompt
@@ -157,6 +152,8 @@ class AIEngine:
         self.send_fcm_alert = send_fcm_alert
         self.stop = stop_event
         self.lock = threading.Lock()
+        self.delivery_lock = threading.Lock()
+        self.signal_lock = threading.RLock()
         self.last_analysis_ms = 0
         self.last_scheduled_ms = 0
         self.last_event_ms = 0
@@ -189,15 +186,19 @@ class AIEngine:
         self.last_bar = 0
         with self.store.lock, self.store.db:
             self.store.db.execute("CREATE TABLE IF NOT EXISTS ai_runtime(id INTEGER PRIMARY KEY,payload TEXT)")
+            self.store.db.execute("CREATE TABLE IF NOT EXISTS ai_delivery(id TEXT PRIMARY KEY, attempts INTEGER NOT NULL DEFAULT 0, due INTEGER NOT NULL DEFAULT 0, last_error TEXT, accepted_ms INTEGER)")
+            self.store.db.execute("CREATE TABLE IF NOT EXISTS ai_stages(id TEXT PRIMARY KEY,payload TEXT NOT NULL,state TEXT NOT NULL,due INTEGER NOT NULL,expires INTEGER NOT NULL)")
+            self.store.db.execute("CREATE TABLE IF NOT EXISTS ai_inputs(id TEXT PRIMARY KEY,payload TEXT NOT NULL)")
             row = self.store.db.execute("SELECT payload FROM ai_runtime WHERE id=1").fetchone()
             if row:
                 for k, v in json.loads(row[0]).items():
                     setattr(self, k, v)
             self.store.db.execute("UPDATE observation_queue SET state='MIGRATED' WHERE id LIKE 'AI_%' AND state='PENDING'")
-            rows = self.store.db.execute("SELECT payload FROM ai_signals ORDER BY at_ms").fetchall()
+            rows = self.store.db.execute("SELECT payload FROM ai_signals WHERE state IN ('PENDING','FCM_ACCEPTED') ORDER BY at_ms").fetchall()
             for row in rows:
                 sig = json.loads(row[0])
-                self.active_signals[sig['id']] = sig
+                if sig.get('trackingState', 'WATCHING') == 'WATCHING':
+                    self.active_signals[sig['id']] = sig
                 self.last_signal = sig
             row = self.store.db.execute("SELECT payload FROM ai_evaluations ORDER BY at_ms DESC LIMIT 1").fetchone()
             if row and 'isBuy' in json.loads(row[0]):
@@ -256,6 +257,9 @@ class AIEngine:
                     if "enabledEventTrigger" not in cfg:
                         cfg["enabledEventTrigger"] = cfg.get("eventTriggerEnabled", True)
                     merged.update(cfg)
+                    # These are server policy constants, never stale saved preferences.
+                    for key in ('minNetTp1','minNetRR','assumedFrictionPct','maxHoldMinutes'):
+                        merged[key]=DEFAULT_AI_CONFIG[key]
                     merged["apiKey"] = self.provider_key(merged["provider"])
                     return merged
                 except Exception:
@@ -457,6 +461,22 @@ class AIEngine:
             if not isinstance(decision, dict) or type(decision.get("is_buy")) is not bool:
                 return {"ok": False, "error": "INVALID_MODEL_RESPONSE"}
             is_buy = decision["is_buy"]
+            if is_buy and decision.get('scenario') == 'FLASH_REBOUND_FAST':
+                return {'ok':False,'error':'FAST_MODULE_REQUIRES_REALTIME_DETECTOR'}
+            if is_buy and decision.get("scenario") in ("FLUSH_RECLAIM", "PULLBACK_RECLAIM"):
+                from .short_horizon import setup_from_snapshot
+                setup = setup_from_snapshot(snapshot, now_ms)
+                if not setup or setup["module"] != decision.get("scenario"):
+                    is_buy = False
+                    decision["is_buy"] = False
+                    decision["summary_zh"] = "结构契约未确认该形态"
+                else:
+                    decision["contract_locked"] = True
+                    decision.update(entry_min=setup["entry"], entry_max=setup["entry"], target_tp1=setup["target"],
+                                    target_tp2=setup["target"], stop_loss=setup["stop"], hold_minutes=setup["hold"],
+                                    anchor_timeframe="30m", anchor_time_ms=setup["anchor_time_ms"],
+                                    scenario_name_zh=setup["name_zh"], min_net=setup["min_net"],
+                                    expires_at=setup["expires_at"], structure_key=setup["structure_key"])
             eval_id = str(uuid.uuid4())
 
             # Audit record
@@ -472,11 +492,12 @@ class AIEngine:
                 "confidence": decision.get("confidence", 0),
                 "scenario": decision.get("scenario", "NONE"),
                 "scenarioNameZh": decision.get("scenario_name_zh", "观望无机会"),
-                "summaryZh": decision.get("summary_zh", "行情扫描完成"),
+                "summaryZh": decision.get("summary_zh") or decision.get("reason") or "模型未提供观望原因",
                 "decision": decision,
             }
 
             with self.store.lock, self.store.db:
+                self.store.db.execute('INSERT INTO ai_inputs VALUES(?,?)',(eval_id,json.dumps({'snapshot':snapshot,'prompt':prompt,'systemPrompt':SYSTEM_PROMPT,'policyVersion':'short-opportunities-v2','decision':decision})))
                 self.store.db.execute(
                     "INSERT INTO ai_evaluations VALUES(?,?,?,?,?,?,?,?,?,?)",
                     (
@@ -508,16 +529,83 @@ class AIEngine:
                 eval_record["modelSuggestedBuy"] = True
                 eval_record["verificationStatus"] = "ACCEPTED" if accepted else "REJECTED"
                 if not accepted:
-                    eval_record["summaryZh"] = "【风控或去重拦截】" + eval_record["summaryZh"]
+                    eval_record["summaryZh"] = "【拦截】" + eval_record.get("rejectionReason", "报价、成本或去重复核不通过")
 
             if eval_record["isBuy"] and self.last_signal:
                 eval_record.update({k: v for k, v in self.last_signal.items() if k not in ("id", "atMs")})
             with self.store.lock, self.store.db:
                 self.store.db.execute("UPDATE ai_evaluations SET is_buy=?,payload=? WHERE id=?", (int(eval_record["isBuy"]), json.dumps(eval_record), eval_id))
+            if not eval_record['isBuy'] and decision.get('stage') in ('MARKET_EVENT','STABILIZING'):
+                self.publish_stage('LLM_'+str(now_ms//900000),decision['stage'],str(eval_record['summaryZh'])[:100],now_ms)
             return {"ok": True, "evaluation": eval_record}
 
     def verify_and_push_signal(self, eval_record, decision, now_ms):
+        with self.signal_lock:
+            return self._verify_and_push_signal(eval_record, decision, now_ms)
+
+    def _push_locked_contract(self, eval_record, decision, now_ms):
+        """AI may only agree with a short-horizon contract. It does not choose prices."""
+        eval_record["rejectionReason"] = "报价已离开短线契约"
+        fresh = self.cache.snapshot(int(time.time() * 1000))
+        if not fresh.get("healthy"):
+            return False
+        ask = float(fresh["ticker"].get("ask_price") or 0)
+        stop = float(decision["stop_loss"])
+        target = float(decision["target_tp1"])
+        planned = float(decision["entry_min"])
+        if not (stop < ask < target) or abs(ask - planned) / planned > 0.0015:
+            return False
+        net = (target / ask - 1) * 100 - 0.11
+        risk = (1 - stop / ask) * 100
+        floor = float(decision.get("min_net") or 0.59)
+        if risk <= 0 or net < floor - 1e-9 or net / (risk + 0.11) < 1.10:
+            eval_record["rejectionReason"] = f"净目标{net:.3f}%不足"
+            return False
+        scenario = decision["scenario"]
+        sig_id = f"AI_{scenario}_{decision.get('structure_key', now_ms)}"
+        expires_at = int(decision.get("expires_at") or now_ms + 30 * 60 * 1000)
+        sig_data = {
+            "id": sig_id, "atMs": now_ms, "symbol": "BTCUSDT", "signalType": "BUY", "source": "AI_ENGINE",
+            "provider": eval_record.get("provider"), "model": eval_record.get("model"), "scenario": scenario,
+            "scenarioNameZh": decision.get("scenario_name_zh", "短线收回"),
+            "entryMin": planned * 0.9985, "entryMax": planned * 1.0015, "entryPrice": ask,
+            "targetTP1": target, "targetTP2": target, "stopLoss": stop,
+            "profitPercent1": round(net, 2), "grossProfitPercent1": round(net + 0.11, 2),
+            "stopLossPercent": round(risk, 2), "riskRewardRatio": round(net / (risk + 0.11), 2),
+            "timeHorizon": f"{int(decision.get('hold_minutes') or 45)}分钟",
+            "summaryZh": (decision.get("summary_zh") or "契约确认")[:25],
+            "expiresAt": expires_at, "minNetTp1": floor, "structureLow": stop,
+            "holdMinutes": int(decision.get("hold_minutes") or 45),
+            "targetPolicyVersion": "short-horizon-v1", "module": scenario,
+            "trackingMode": "PLAN_ONLY", "trackingState": "WATCHING", "trailingStop": stop,
+        }
+        from .ai_policy import alert_card, same_opportunity
+        for old in list(self.active_signals.values()):
+            if same_opportunity(old, sig_data):
+                eval_record["rejectionReason"] = "同一结构机会已提醒"
+                return False
+        sig_data["cardText"] = alert_card(sig_data)
+        with self.store.lock, self.store.db:
+            self.store.db.execute(
+                "INSERT OR IGNORE INTO ai_signals VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (sig_id, now_ms, scenario, sig_data["entryMin"], sig_data["entryMax"], target, stop, "PENDING", json.dumps(sig_data), expires_at),
+            )
+            self.store.db.execute(
+                "INSERT OR IGNORE INTO observation_queue VALUES(?,?,?,?,?)",
+                (sig_id, json.dumps({"title": "Crypto-G AI买入预警 · " + sig_data["scenarioNameZh"], "body": sig_data["cardText"],
+                                     "eventType": "AI_BUY_ALERT", "eventId": sig_id, "signalType": "BUY", "cardText": sig_data["cardText"]}),
+                 "AI_ARCHIVE", now_ms, expires_at),
+            )
+        self.active_signals[sig_id] = sig_data
+        self.last_signal = sig_data
+        eval_record.pop("rejectionReason", None)
+        return True
+
+    def _verify_and_push_signal(self, eval_record, decision, now_ms):
         """Re-verify fresh quote, stop loss and bounds before dispatching alert."""
+        if decision.get("contract_locked"):
+            return self._push_locked_contract(eval_record, decision, now_ms)
+        eval_record["rejectionReason"] = "报价、价格顺序或结构复核不通过"
         fresh_snapshot = self.cache.snapshot(int(time.time() * 1000))
         if not fresh_snapshot.get("healthy"):
             logger.warning("AI buy signal rejected: fresh quote unhealthy")
@@ -557,17 +645,19 @@ class AIEngine:
         net_tp1 = ((target_tp1 / ask - 1) * 100 - 0.11) if ask > 0 else 0
         risk_pct = ((1 - stop_loss / ask) * 100) if ask > 0 else 1
         net_rr = net_tp1 / (risk_pct + 0.11) if (risk_pct + 0.11) > 0 else 0
-        if net_tp1 < 0.40 or net_rr < 1.10:
+        if net_tp1 < MIN_NET_TP1 - 1e-9 or net_rr < 1.10:
+            eval_record["rejectionReason"] = f"净目标{net_tp1:.3f}% / 净盈亏比{net_rr:.2f}不足"
             logger.info("AI buy signal blocked: netTP1 %.2f%% or netRR %.2f below gate", net_tp1, net_rr)
             return False
 
         try:
             plan = trade_plan(decision, fresh_snapshot, ask)
-        except (ValueError, TypeError, KeyError):
+        except (ValueError, TypeError, KeyError) as exc:
+            eval_record['rejectionReason'] = str(exc)
             return False
         scenario = decision['scenario']
         sig_id = f"AI_{scenario}_{now_ms}"
-        expires_at = now_ms + 90000
+        expires_at = now_ms + (10000 if scenario=='FLASH_REBOUND_FAST' else 90000)
 
         sig_data = {
             "id": sig_id,
@@ -595,10 +685,11 @@ class AIEngine:
 
         sig_data.update(plan)
         for key, old in list(self.active_signals.items()):
-            if now_ms > old["atMs"] + old.get("holdMinutes",720)*60000 or ask <= old.get("stopLoss",0):
+            if old.get('trackingState', 'WATCHING') != 'WATCHING' or now_ms >= old["atMs"] + old.get("holdSeconds",old.get("holdMinutes",720)*60)*1000 or ask <= old.get("trailingStop",old.get("stopLoss",0)):
                 del self.active_signals[key]
                 continue
             if same_opportunity(old, sig_data):
+                eval_record["rejectionReason"] = "同一结构机会已提醒"
                 return False
         sig_data['cardText'] = alert_card(sig_data)
         with self.store.lock, self.store.db:
@@ -637,14 +728,19 @@ class AIEngine:
 
         self.active_signals[sig_id] = sig_data
         self.last_signal = sig_data
+        eval_record.pop("rejectionReason", None)
 
         return True
 
     def track_plans(self):
+        with self.signal_lock:
+            self._track_plans()
+
+    def _track_plans(self):
         now = int(time.time()*1000)
         snapshot = self.cache.snapshot(now)
         with self.store.lock, self.store.db:
-            rows = self.store.db.execute("SELECT id,payload FROM ai_signals ORDER BY at_ms DESC LIMIT 200").fetchall()
+            rows = self.store.db.execute("SELECT id,payload FROM ai_signals WHERE state IN ('PENDING','FCM_ACCEPTED') ORDER BY at_ms DESC LIMIT 200").fetchall()
             for identity, raw in rows:
                 plan = json.loads(raw)
                 if 'holdMinutes' not in plan:
@@ -652,15 +748,43 @@ class AIEngine:
                 updated = advance_plan(plan, snapshot, now)
                 if updated != plan:
                     self.store.db.execute('UPDATE ai_signals SET payload=? WHERE id=?',(json.dumps(updated),identity))
-                self.active_signals[identity] = updated
+                if updated.get('trackingState') == 'WATCHING':
+                    self.active_signals[identity] = updated
+                else:
+                    self.active_signals.pop(identity, None)
 
     def dispatch_pending(self):
+        if not self.delivery_lock.acquire(blocking=False):
+            return
+        try:
+            self._dispatch_pending()
+            self.dispatch_stages()
+        finally:
+            self.delivery_lock.release()
+
+    def publish_stage(self,key,stage,reason,now):
+        # Unstructured LLM stage text and raw crashes are diagnostic only.
+        # Qualified preparations come from the common, risk-checked observation pipeline.
+        return False
+
+    def dispatch_stages(self):
+        with self.store.lock,self.store.db:
+            self.store.db.execute("UPDATE ai_stages SET state='CANCELLED' WHERE state='PENDING'")
+
+    def _dispatch_pending(self):
         now = int(time.time()*1000)
         with self.store.lock:
-            rows = self.store.db.execute("SELECT id,payload,expires_at FROM ai_signals WHERE state='PENDING' ORDER BY at_ms LIMIT 10").fetchall()
+            rows = self.store.db.execute("SELECT s.id,s.payload,s.expires_at FROM ai_signals s LEFT JOIN ai_delivery d ON s.id=d.id WHERE s.state='PENDING' AND (s.expires_at<=? OR COALESCE(d.due,0)<=?) ORDER BY s.at_ms LIMIT 10",(now,now)).fetchall()
         for identity, raw, expires in rows:
+            now = int(time.time()*1000)
             sig = json.loads(raw)
             state = 'EXPIRED' if now >= expires else None
+            if state is None and not self.get_config().get('enabled'):
+                state = 'CANCELLED'
+            if state is None and sig.get('targetPolicyVersion') not in ('ai-resistance-v2', 'short-horizon-v1'):
+                state = 'INVALIDATED'
+            if state is None and sig.get('trackingState','WATCHING') != 'WATCHING':
+                state = 'INVALIDATED'
             snapshot = self.cache.snapshot(now)
             if state is None and not snapshot.get('healthy'):
                 continue
@@ -668,8 +792,9 @@ class AIEngine:
                 q = snapshot['ticker']; ask = q['ask_price']; bid = q['bid_price']
                 net = (sig['targetTP1']/ask-1)*100-.11
                 risk = (1-sig['stopLoss']/ask)*100+.11
+                floor = float(sig.get('minNetTp1') or MIN_NET_TP1)
                 valid = (sig['entryMin'] <= ask <= sig['entryMax'] and sig['stopLoss'] < ask < sig['targetTP1']
-                         and 0 < (ask-bid)/ask*100 <= .02 and net >= .40 and risk > 0 and net/risk >= 1.10)
+                         and 0 < (ask-bid)/ask*100 <= .02 and net >= floor - 1e-9 and risk > 0 and net/risk >= 1.10)
                 if not valid:
                     state = 'INVALIDATED'
                 else:
@@ -678,19 +803,32 @@ class AIEngine:
                     body = sig.get('cardText', body)
                     payload = {k:str(v) for k,v in sig.items()}
                     payload.update(eventId=identity,eventType='AI_BUY_ALERT',title=title,body=body,timestamp=str(sig['atMs']))
+                    with self.store.lock, self.store.db:
+                        self.store.db.execute('INSERT OR IGNORE INTO ai_delivery(id) VALUES(?)',(identity,))
+                        self.store.db.execute('UPDATE ai_delivery SET attempts=attempts+1,due=?,last_error=? WHERE id=?',(now+30000,'ATTEMPT_IN_PROGRESS',identity))
+                    error = None
                     try:
                         state = 'FCM_ACCEPTED' if self.send_fcm_alert(title,body,payload) else None
-                    except Exception:
-                        state = None
+                        if state is None: error = 'FCM_NOT_ACCEPTED'
+                    except Exception as exc:
+                        error = type(exc).__name__
+                    with self.store.lock, self.store.db:
+                        self.store.db.execute('UPDATE ai_delivery SET due=?,last_error=?,accepted_ms=? WHERE id=?',(now+5000,error,now if state else None,identity))
+                        if state:
+                            self.store.db.execute('UPDATE ai_signals SET state=? WHERE id=?',(state,identity))
             if state:
                 with self.store.lock, self.store.db:
                     self.store.db.execute("UPDATE ai_signals SET state=? WHERE id=?", (state,identity))
+                if state in ('EXPIRED','INVALIDATED','CANCELLED'):
+                    self.active_signals.pop(identity, None)
 
     def status(self):
         cfg = self.get_config()
         with self.store.lock:
             eval_count = self.store.db.execute("SELECT count(*) FROM ai_evaluations").fetchone()[0]
-            buy_count = self.store.db.execute("SELECT count(*) FROM ai_evaluations WHERE is_buy=1").fetchone()[0]
+            buy_count = self.store.db.execute("SELECT count(*) FROM ai_signals").fetchone()[0]
+            rejected_count = self.store.db.execute("SELECT count(*) FROM ai_evaluations WHERE json_extract(payload,'$.verificationStatus')='REJECTED'").fetchone()[0]
+            suggested_count = self.store.db.execute("SELECT count(*) FROM ai_evaluations WHERE json_extract(payload,'$.decision.is_buy')=1").fetchone()[0]
             recent_evals = [
                 json.loads(r[0]) if "isBuy" in json.loads(r[0]) else {"id":r[1],"atMs":r[2],"triggerReason":r[3],"model":r[4],"provider":r[5],"isBuy":False,"scenarioNameZh":"旧版本评估（未复核）","summaryZh":json.loads(r[0]).get("summary_zh",""),"confidence":json.loads(r[0]).get("confidence",0)}
                 for r in self.store.db.execute("SELECT payload,id,at_ms,trigger_reason,model,provider FROM ai_evaluations ORDER BY at_ms DESC LIMIT 10").fetchall()
@@ -718,6 +856,8 @@ class AIEngine:
             "evalCount": eval_count,
             "totalEvaluations": eval_count,
             "buyCount": buy_count,
+            "suggestedCount":suggested_count,
+            "rejectedCount":rejected_count,
             "lastScheduledMs": self.last_scheduled_ms,
             "lastEventMs": self.last_event_ms,
             "activeSignals": self.active_signals,
@@ -725,6 +865,25 @@ class AIEngine:
             "totalBuySignals": buy_count,
             "recentEvaluations": recent_evals,
         }
+
+
+class AIDeliveryWorker(threading.Thread):
+    """At-least-once delivery independent of model latency; stable event IDs on retry."""
+    def __init__(self, ai_engine, stop_event):
+        super().__init__(name='btc-ai-delivery', daemon=True)
+        self.ai, self.stop = ai_engine, stop_event
+        self.heartbeat_ms, self.error = 0, None
+
+    def run(self):
+        while not self.stop.is_set():
+            self.heartbeat_ms = int(time.time()*1000)
+            try:
+                self.ai.dispatch_pending()
+                self.error = None
+            except Exception as exc:
+                self.error = type(exc).__name__
+                logger.error('AI delivery failed: %s', self.error)
+            self.stop.wait(.5)
 
 
 class AIAnalystWorker(threading.Thread):
@@ -776,7 +935,9 @@ class AIAnalystWorker(threading.Thread):
 
                     time_since_scheduled = now_ms-self.ai.last_scheduled_ms
                     self.ai.track_plans()
-                    self.ai.dispatch_pending()
+                    if not getattr(self.ai, 'originate_buys', True):
+                        self.stop.wait(1)
+                        continue
                     snapshot = self.ai.cache.snapshot(now_ms)
                     bars = snapshot.get('series',{}).get('5m',[])
                     bar = bars[-1]['close_time'] if bars else 0

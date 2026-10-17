@@ -1,0 +1,6 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="background:#10141c"><div id="root" style="max-width:420px;margin:20px auto"></div><script type="module">
+import React from 'react';import {createRoot} from 'react-dom/client';import {MessagePanel} from '../src/components/MessagePanel';import '../src/index.css';
+const store=new Map();Object.defineProperty(window,'localStorage',{value:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)}});
+localStorage.setItem('cryptog_inbox_v1',JSON.stringify([{id:'drawer-test',title:'抽屉阅读验收消息',body:'完整内容开始：买入理由、触发时间、止盈止损和建议持有时间。\n'+('长消息完整阅读验证。'.repeat(150))+'\n完整内容结束',at:Date.now(),category:'准备入场',read:false}]));
+createRoot(document.getElementById('root')).render(React.createElement(MessagePanel));
+</script></body></html>

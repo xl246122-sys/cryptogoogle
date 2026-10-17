@@ -24,6 +24,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { ScannerConfig, MacroTrendAnalysis } from '../../types/crypto';
+import { GuardLabDrawer } from '../HorizonPanels';
 import { strategySettings, families } from '../../services/strategySettings';
 import { soundService } from '../../services/soundService';
 import { ServerConnectionPanel } from '../ServerConnectionPanel';
@@ -214,6 +215,7 @@ export const SystemGuardView: React.FC<SystemGuardViewProps> = ({
 
   return (
     <div className="space-y-3 pb-8 animate-fadeIn">
+      <GuardLabDrawer market={macroTrend} />
       {/* 1. Global Overview Hero Card */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#161a26] via-[#121520] to-[#0d1017] border border-gray-800 p-3.5 shadow-lg">
         <div className="flex items-center justify-between">

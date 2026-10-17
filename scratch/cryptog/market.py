@@ -1,4 +1,5 @@
 """Binance spot cache. Sequence gaps invalidate depth until a fresh REST bootstrap."""
+from collections import deque
 import copy
 import math
 import threading
@@ -36,7 +37,7 @@ class MarketCache:
             self.candle_events = {}
             self.last_trade_id = None
             self.trade_at = 0
-            self.trades = []
+            self.trades = deque(maxlen=50000)
 
     def sync_clock(self, server_ms, sent_ms, received_ms):
         with self.lock:
@@ -114,7 +115,8 @@ class MarketCache:
                 if c['is_closed'] and c['close_time'] > event: raise ValueError('Premature closed candle')
                 self.bars[interval][start] = c
                 self.candle_events[(interval,start)] = event
-                for old in sorted(self.bars[interval])[:-256]:
+                keep = 400 if interval == '1m' else 256
+                for old in sorted(self.bars[interval])[:-keep]:
                     del self.bars[interval][old]
                     self.candle_events.pop((interval,old), None)
             elif kind == 'aggTrade':
@@ -125,7 +127,8 @@ class MarketCache:
                 self.last_trade_id, self.trade_at = trade_id, event
                 self.trades.append({'id':trade_id, 'atMs':int(d['T']), 'price':positive(d['p']),
                                     'quantity':positive(d['q']), 'buyerMaker':bool(d['m'])})
-                self.trades = self.trades[-2000:]
+                while self.trades and self.trades[0]['atMs'] < event-310000:
+                    self.trades.popleft()
             else:
                 return False
             self.changed.set()
@@ -164,3 +167,9 @@ class MarketCache:
                     'ticker':ticker, 'book':book, 'series':series,
                     'depthUpdateId':self.last_id, 'depthReceivedAtMs':self.depth_received,
                     'lastTradeId':self.last_trade_id}
+
+    def fast_snapshot(self, local_ms):
+        with self.lock:
+            result = self.snapshot(local_ms)
+            result['recentTrades'] = list(self.trades)
+            return result

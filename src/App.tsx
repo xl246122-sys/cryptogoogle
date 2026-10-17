@@ -11,9 +11,9 @@ import { soundService } from './services/soundService';
 import { notificationService } from './services/notificationService';
 import {recordExitPush,flushExitReceipts} from './services/exitPush';
 import { flushLibraryQueue, recordPhoneReceived, recordSimBuy, rememberAction } from './services/modelLibrary';
-import { focusMessage } from './services/inbox';
+import { focusMessage, autoClearMessages } from './services/inbox';
 
-import { parseCloudSignal, entryIssue, signalTimeIssue, fetchEntryQuote } from './services/signalValidity';
+import { parseCloudSignal, entryIssue, signalTimeIssue, fetchEntryQuote, aiEntryAllowed } from './services/signalValidity';
 
 import { Header } from './components/Header';
 import { BottomNav, TabType } from './components/BottomNav';
@@ -25,7 +25,8 @@ import { SignalsView } from './components/views/SignalsView';
 import { AIQuantView } from './components/views/AIQuantView';
 import { WatchlistView } from './components/views/WatchlistView';
 import { SystemGuardView } from './components/views/SystemGuardView';
-import { aiScheduler } from './services/aiEngine';
+import { aiScheduler, fetchAIState } from './services/aiEngine';
+import { getInitialMarketState } from './services/marketState';
 
 const DEFAULT_CONFIG: ScannerConfig = {
   scanIntervalMs: 2000,
@@ -50,15 +51,31 @@ const DEFAULT_CONFIG: ScannerConfig = {
 };
 
 export default function App() {
+  const [aiCard, setAiCard] = useState<{text:string;expiresAt:number}|null>(null);
+  const aiSeen = useRef(new Set<string>());
+  useEffect(() => {
+    if (!aiCard) return;
+    const timer = window.setTimeout(() => setAiCard(null),Math.max(0,aiCard.expiresAt-Date.now()));
+    return () => window.clearTimeout(timer);
+  },[aiCard]);
+  useEffect(() => {
+    const clearDelivered = () => { void notificationService.clearDelivered().catch(() => {}); };
+    const check = () => autoClearMessages();
+    window.addEventListener('cryptog-inbox-cleared', clearDelivered);
+    document.addEventListener('visibilitychange', check);
+    check();
+    const timer = window.setInterval(check, 1000);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('cryptog-inbox-cleared', clearDelivered);
+      document.removeEventListener('visibilitychange', check);
+    };
+  }, []);
   const [activeTab, setActiveTab] = useState<TabType>('radar');
   const [tickers, setTickers] = useState<Record<string, MarketTicker>>({});
   const [signals, setSignals] = useState<TradeSignal[]>([]);
   const [activeModalSignal, setActiveModalSignal] = useState<TradeSignal | null>(null);
-  const [macroTrend, setMacroTrend] = useState<MacroTrendAnalysis>({
-    hourlyTrend: 'RANGING', hourlyMa20: 0, hourlyMa50: 0, hourlyRsi: 0,
-    trendDriftPercent: 0, allowLongBreakout: false, regime: 'UNKNOWN', dataReady: false,
-    regimeNameZh: '等待行情', regimeDescription: '等待足够的已收盘行情数据', biasZh: '尚未计算',
-  });
+  const [macroTrend, setMacroTrend] = useState<MacroTrendAnalysis>(getInitialMarketState);
 
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>(() => {
     try {
@@ -203,6 +220,17 @@ export default function App() {
     document.addEventListener('visibilitychange',resumePermission);
     const permissionTimer=window.setInterval(resumePermission,10000);
     const unsubscribeSignal = notificationService.onSignalReceived(async (data: any, origin?: 'received' | 'opened') => {
+      if (data?.eventType === 'AI_BUY_ALERT') {
+        const id=String(data.eventId || '');
+        const expires=Number(data.expiresAt);
+        if (!id || aiSeen.current.has(id) || !Number.isFinite(expires) || expires<=Date.now()) return;
+        const quote=await fetchEntryQuote();
+        if(disposed || !aiEntryAllowed(data,quote)) return;
+        aiSeen.current.add(id);
+        setAiCard({text:String(data.cardText),expiresAt:expires});
+        soundService.playBuySignalChime();
+        return;
+      }
       if (data?.eventType==='POSITION_EXIT_NOTICE') {
         setActiveTab('system');
         try {await recordExitPush(data,origin==='opened'?'opened':'received');await flushExitReceipts();}
@@ -274,11 +302,19 @@ export default function App() {
       finally { busy = false; }
     };
     void refresh();
+    void fetchAIState();
+    const resume = () => {
+      if (document.visibilityState !== 'visible') return;
+      setMacroTrend(getInitialMarketState());
+      void refresh();
+      void fetchAIState();
+    };
+    document.addEventListener('visibilitychange', resume);
     const syncReceipts=()=>void flushExitReceipts().catch(()=>{});
     syncReceipts();
     const receiptTimer=window.setInterval(syncReceipts,15000);
     const timer = window.setInterval(() => void refresh(), 3000);
-    return () => { disposed = true; window.clearInterval(timer);window.clearInterval(receiptTimer); };
+    return () => { disposed = true; document.removeEventListener('visibilitychange', resume); window.clearInterval(timer);window.clearInterval(receiptTimer); };
   }, []);
 
   // Global 24/7 AI Quantitative Scheduler (Active across all tabs)
@@ -452,7 +488,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'ai' && <AIQuantView />}
+        {activeTab === 'ai' && <AIQuantView macroTrend={macroTrend} />}
 
         {activeTab === 'watchlist' && (
           <WatchlistView
@@ -492,6 +528,13 @@ export default function App() {
       />
 
       {/* High-Priority Instant Signal Alert Modal Popup */}
+      {aiCard && <div className="fixed inset-0 z-[100] bg-black/75 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="BTC买入机会">
+        <div className="w-full max-w-md rounded-2xl border border-emerald-600 bg-[#121622] p-5">
+          <p className="text-emerald-300 font-semibold mb-3">BTC 买入机会</p>
+          <p className="whitespace-pre-line text-sm text-gray-100 leading-7">{aiCard.text}</p>
+          <button className="mt-4 w-full rounded-lg bg-emerald-700 p-3 text-white" onClick={() => setAiCard(null)}>知道了</button>
+        </div>
+      </div>}
       <SignalAlertModal
         signal={activeModalSignal}
         onClose={() => setActiveModalSignal(null)}

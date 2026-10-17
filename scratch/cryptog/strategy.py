@@ -6,6 +6,7 @@ from .features import TechnicalIndicators, get_closed_candles
 from .market_state import diagnose_cascade_downtrend
 from .cost_risk import entry_contract, model_targets
 from .diagnostics import reject as log_skip
+from .short_horizon import aggregate, classify
 
 
 def validate_market_data_quality(candles: List[dict], ticker: dict, order_book: dict, hourly_candles: Optional[List[dict]] = None) -> Tuple[bool, str]:
@@ -207,6 +208,86 @@ def recent_crash_confirmed(bars: List[dict]) -> bool:
 
 
 
+def short_horizon_signal(ticker: dict, macro: dict, closed_1m: List[dict], closed_15m: List[dict],
+                         closed_1h: List[dict], order_book: dict, vol_regime: dict, rsi14: float,
+                         atr14: float, now_ms: int) -> Optional[dict]:
+    """First look: 10m trigger on 30m structure. None leaves the older routes unchanged."""
+    setup = classify(
+        aggregate(closed_1m, 60_000, 600_000),
+        aggregate(closed_15m, 900_000, 1_800_000),
+        closed_1h,
+        ticker["price"],
+        now_ms,
+    )
+    if not setup:
+        return None
+    policy_min = setup["min_net"]
+    contract = entry_contract(
+        ticker["price"], setup["target"], setup["stop"], now_ms - 1000,
+        None, now_ms, ticker["price"], policy_min, setup["invalidation"],
+    )
+    if contract is None:
+        log_skip("短线结构已出现，但当前价离开可执行区间")
+        return None
+    contract["expires_at"] = setup["expires_at"]
+    gross = setup["gross"]
+    net = setup["net"]
+    risk = setup["risk"]
+    reason = (
+        f"{setup['reason']}。止损在已收盘结构低点 ${setup['invalidation']:,.2f}，"
+        f"目标是最近已确认高点内侧。净目标 {net:.2f}%，净盈亏比 {setup['rr']:.2f}。"
+        f"这不是上涨概率。历史胜率：未验证。"
+    )
+    return {
+        "symbol": "BTCUSDT",
+        "coin_name": "Bitcoin (比特币)",
+        "signal_type": "BUY",
+        "decision_status": "BUY_CANDIDATE",
+        "strategy": setup["strategy"],
+        "model": setup["model"],
+        "rule_version": "short-horizon-v1",
+        "max_hold_minutes": setup["hold"],
+        "min_net_tp1": policy_min,
+        "max_net_target": None,
+        "invalidation_price": setup["invalidation"],
+        "tp1_fraction": 1.0,
+        "target_basis": "30分钟已确认高点内侧0.05%；止损不压缩",
+        "exit_rule": "价格触及止损或失效位退出；目标到价退出；到期退出。止损不自动上移。",
+        "strategy_name_zh": setup["name_zh"],
+        "entry_price": ticker["price"],
+        "target_tp1": setup["target"],
+        "target_tp2": setup["target"],
+        "stop_loss": setup["stop"],
+        "profit_pct1": round(gross, 4),
+        "profit_pct2": round(gross, 4),
+        "stop_loss_pct": round(risk, 4),
+        "net_tp1": round(net, 4),
+        "net_tp2": round(net, 4),
+        "net_rr": round(setup["rr"], 4),
+        "risk_reward": round(gross / risk, 2) if risk else 0,
+        "time_horizon": f"最长 {setup['hold']} 分钟；止损优先",
+        "rule_score": 0,
+        "rule_score_breakdown": setup["module"],
+        "win_rate_status": "历史胜率：未验证",
+        "reason_zh": reason,
+        "structure_support": setup["stop"],
+        "structure_key": setup["structure_key"],
+        "effective_drop": 0.0,
+        "volatility_level": vol_regime.get("level"),
+        "quantile_pct": vol_regime.get("quantile"),
+        "regime": macro.get("trend", "UNKNOWN"),
+        "hourly_rsi": round(float(macro.get("rsi") or 0.0), 2),
+        "confirmation_time": setup["confirmation_ms"],
+        "timestamp": now_ms,
+        **contract,
+        "rsi14": round(rsi14, 2),
+        "atr_percent": round(atr14 / ticker["price"] * 100, 4) if ticker["price"] else None,
+        "volume_multiplier": None,
+        "vwap_diff_percent": None,
+        "order_flow_imbalance": round(order_book.get("imbalance", 0.0) * 100, 2),
+    }
+
+
 def scan_symbol(symbol: str, ticker: dict, macro: dict, raw_candles: List[dict], order_book: dict, hourly_candles: Optional[List[dict]] = None, regime_candles: Optional[List[dict]] = None, five_min_candles: Optional[List[dict]] = None) -> Optional[dict]:
     if symbol != "BTCUSDT":
         log_skip('标的不是 BTCUSDT')
@@ -236,12 +317,6 @@ def scan_symbol(symbol: str, ticker: dict, macro: dict, raw_candles: List[dict],
     rsi14 = TechnicalIndicators.rsi(closed_candles, 14)
     atr14 = TechnicalIndicators.atr(closed_candles, 14)
 
-    # Waterfall check on closed candles
-    is_cascading, cascade_reason = diagnose_cascade_downtrend(closed_candles, ticker)
-    if is_cascading:
-        log_skip(cascade_reason or "瀑布通道拦截")
-        return None
-
     # Peak & Drop Calculation
     candle_high = max(c["high"] for c in closed_candles)
     peak_price = max(ticker.get("high24h", curr_price), candle_high, curr_price)
@@ -268,6 +343,17 @@ def scan_symbol(symbol: str, ticker: dict, macro: dict, raw_candles: List[dict],
         if not bars or not 0 <= fresh_now - bars[-1].get("close_time", 0) <= interval + QUOTE_MAX_AGE_MS:
             log_skip("已收盘行情缺失或过期，暂停生成候选")
             return None
+    horizon = short_horizon_signal(
+        ticker, macro, closed_candles, closed_regime, get_closed_candles(hourly_candles or []),
+        order_book, vol_regime, rsi14, atr14, fresh_now,
+    )
+    if horizon:
+        return horizon
+    # 1m waterfall still blocks the older routes. The 10m/30m contract above is the short-horizon path.
+    is_cascading, cascade_reason = diagnose_cascade_downtrend(closed_candles, ticker)
+    if is_cascading:
+        log_skip(cascade_reason or "瀑布通道拦截")
+        return None
     breakout = _closed_breakout(closed_5m, closed_regime)
     # A failed current-price breakout cannot be relabelled as a pullback in the same scan.
     if breakout and curr_price <= breakout["prior"]:

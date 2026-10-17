@@ -1,5 +1,6 @@
 """User-authorized experimental promotion. Shadow journal remains intact."""
 from .cost_risk import entry_is_valid
+from .config import MIN_NET_TP1
 
 def experimental_signal(decision,ticker):
     for row in decision.get('research',[]):
@@ -10,8 +11,8 @@ def experimental_signal(decision,ticker):
         gain=(target/entry-1)*100;risk=(1-stop/entry)*100
         sig=dict(symbol='BTCUSDT',coin_name='Bitcoin',signal_type='BUY',decision_status='BUY_CANDIDATE',
           strategy='RANGE_OSCILLATION' if model=='RANGE' else 'FLASH_CRASH_REBOUND',model=model,
-          rule_version='experimental-v1',experimental_variant=row['variant'],max_hold_minutes=c['maxHoldMinutes'],
-          min_net_tp1=.4,max_net_target=None,invalidation_price=c['invalidationPrice'],tp1_fraction=1.,
+          rule_version='experimental-v2',experimental_variant=row['variant'],max_hold_minutes=c['maxHoldMinutes'],
+          min_net_tp1=MIN_NET_TP1,max_net_target=None,invalidation_price=c['invalidationPrice'],tp1_fraction=1.,
           target_basis='最近已确认结构阻力',exit_rule='结构失效或止损退出；TP1全部退出；最长持有时间到期退出。',
           strategy_name_zh='实验模型 · '+row['label'],entry_price=entry,target_tp1=target,target_tp2=target,stop_loss=stop,
           profit_pct1=gain,profit_pct2=gain,stop_loss_pct=risk,net_tp1=c['netTP1'],net_tp2=c['netTP1'],net_rr=c['netRR'],

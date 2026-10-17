@@ -9,6 +9,9 @@ import {refreshExitDevice} from './exitPush';
  * 2. Web / PWA browser notifications (via standard Notification & ServiceWorker API)
  */
 class NotificationService {
+  public async clearDelivered() {
+    if (Capacitor.isNativePlatform()) await PushNotifications.removeAllDeliveredNotifications();
+  }
   private hasPermission: boolean = false;
   private isNative: boolean = false;
   private initialized = false;

@@ -1,3 +1,4 @@
+import { SwipeMessageRow } from './SwipeMessageRow';
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   Bell,
@@ -34,6 +35,7 @@ import {
   isNoiseShieldEnabled,
   setNoiseShieldEnabled,
   clearNoiseMessages,
+  clearAllMessages,
   markNoiseAsRead,
 } from '../services/inbox';
 
@@ -54,9 +56,9 @@ export function extractSignalParams(msg: InboxMessage) {
 
   const hasParams = Boolean(entryMin || targetTP1 || stopLoss);
   const isAI =
-    msg.category === 'AI' ||
+    msg.category === 'AI买入预警' ||
     ex.eventType === 'AI_BUY_ALERT' ||
-    (ex.source && String(ex.source).includes('AI'));
+    (ex.source && String(ex.source).includes('AI买入预警'));
 
   return {
     entryMin: entryMin ? Number(entryMin) : undefined,
@@ -79,10 +81,11 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
   const [rows, setRows] = useState<InboxMessage[]>(messages);
   const [activeTab, setActiveTab] = useState<'unread' | 'history'>('unread');
   const [selectedCategory, setSelectedCategory] = useState<string>('全部');
+  const [readingIds,setReadingIds] = useState<Set<string>>(() => new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [focusedModalItem, setFocusedModalItem] = useState<InboxMessage | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [shieldNoise, setShieldNoise] = useState<boolean>(() => isNoiseShieldEnabled());
+  const shieldNoise = false;
 
   // Sync and listen for inbox updates
   useEffect(() => {
@@ -94,13 +97,6 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
       clearInterval(timer);
       window.removeEventListener('cryptog-inbox', refresh);
     };
-  }, []);
-
-  // Listen for noise filter toggle events
-  useEffect(() => {
-    const handleFilter = () => setShieldNoise(isNoiseShieldEnabled());
-    window.addEventListener('cryptog-inbox-filter', handleFilter);
-    return () => window.removeEventListener('cryptog-inbox-filter', handleFilter);
   }, []);
 
   // Handle focus from push notification or background launch
@@ -159,7 +155,7 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
   const activeNoiseCount = activeTab === 'unread' ? noiseUnreadRows.length : noiseTotalRows.length;
 
   const categories = useMemo(() => {
-    const list = ['全部', 'AI', '入场', '接近', '观察', '退出', '失效', '摘要', '测试'];
+    const list = ['全部', 'AI买入预警', '准备入场', '入场', '离场'];
     return list.map((cat) => {
       let count = 0;
       let total = 0;
@@ -184,7 +180,7 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
 
   // Filter messages based on active tab, selected category, and noise shield
   const currentList = useMemo(() => {
-    const pool = activeTab === 'unread' ? unreadRows : historyRows;
+    const pool = activeTab === 'unread' ? rows.filter(m=>!m.read || readingIds.has(m.id)) : historyRows;
     if (selectedCategory === '全部') {
       if (shieldNoise) {
         return pool.filter((m) => !isNoiseCategory(m.category, m.title));
@@ -192,7 +188,7 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
       return pool;
     }
     return pool.filter((m) => m.category === selectedCategory);
-  }, [activeTab, unreadRows, historyRows, selectedCategory, shieldNoise]);
+  }, [activeTab, rows, readingIds, unreadRows, historyRows, selectedCategory, shieldNoise]);
 
   // Drawer click handler: Click to expand, click again to close!
   const handleCardClick = (msg: InboxMessage) => {
@@ -201,6 +197,7 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
     } else {
       setExpandedId(msg.id);
       if (!msg.read) {
+        setReadingIds(ids=>new Set([...ids,msg.id]));
         readMessage(msg.id);
       }
     }
@@ -243,10 +240,10 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
 
   const getCategoryMeta = (cat: string) => {
     switch (cat) {
-      case 'AI':
+      case 'AI买入预警':
         return {
           icon: <Bot className="w-3.5 h-3.5 text-purple-400" />,
-          label: 'AI量化',
+          label: 'AI买入预警',
           bg: 'bg-purple-950/40 border-purple-500/50 text-purple-300',
           accent: 'text-purple-400',
           borderActive: 'border-purple-500/80',
@@ -259,10 +256,10 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
           accent: 'text-emerald-400',
           borderActive: 'border-emerald-500/80',
         };
-      case '接近':
+      case '准备入场':
         return {
           icon: <Sparkles className="w-3.5 h-3.5 text-amber-400" />,
-          label: '条件接近',
+          label: '准备入场',
           bg: 'bg-amber-950/40 border-amber-500/50 text-amber-300',
           accent: 'text-amber-400',
           borderActive: 'border-amber-500/80',
@@ -275,10 +272,10 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
           accent: 'text-blue-400',
           borderActive: 'border-blue-500/80',
         };
-      case '退出':
+      case '离场':
         return {
           icon: <LogOut className="w-3.5 h-3.5 text-rose-400" />,
-          label: '仓位退出',
+          label: '离场',
           bg: 'bg-rose-950/40 border-rose-500/50 text-rose-300',
           accent: 'text-rose-400',
           borderActive: 'border-rose-500/80',
@@ -405,7 +402,7 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
           {open && (
             <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-gray-800/60">
               <button
-                onClick={() => setActiveTab('unread')}
+                onClick={() => {setReadingIds(new Set());setExpandedId(null);setActiveTab('unread');}}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition ${
                   activeTab === 'unread'
                     ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30'
@@ -421,7 +418,7 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
                 )}
               </button>
               <button
-                onClick={() => setActiveTab('history')}
+                onClick={() => {setReadingIds(new Set());setExpandedId(null);setActiveTab('history');}}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition ${
                   activeTab === 'history'
                     ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30'
@@ -439,50 +436,12 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
         {/* Expanded Content Area */}
         {open && (
           <div className="p-3 space-y-3">
-            {/* 🛡️ Noise Shielding Toolbar: 快速屏蔽观察/摘要杂音 */}
-            <div className="flex items-center justify-between gap-2 px-0.5 pb-1">
-              <button
-                onClick={() => {
-                  const next = !shieldNoise;
-                  setShieldNoise(next);
-                  setNoiseShieldEnabled(next);
-                }}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold border transition-all ${
-                  shieldNoise
-                    ? 'bg-amber-950/60 border-amber-500/60 text-amber-300 shadow-sm'
-                    : 'bg-[#181d2a] border-gray-800 text-gray-400 hover:text-gray-200'
-                }`}
-                title={shieldNoise ? '已屏蔽观察、失效与摘要杂音通知（点击关闭屏蔽）' : '点击屏蔽观察与摘要等杂音通知'}
-              >
-                <Shield className={`w-3.5 h-3.5 ${shieldNoise ? 'text-amber-400' : 'text-gray-500'}`} />
-                <span>{shieldNoise ? '已屏蔽观察/摘要杂音' : '屏蔽观察/摘要'}</span>
-                {activeNoiseCount > 0 && (
-                  <span
-                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                      shieldNoise
-                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                        : 'bg-gray-800 text-gray-500'
-                    }`}
-                  >
-                    {activeNoiseCount}
-                  </span>
-                )}
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-gray-400">每3小时自动清空全部消息</span>
+              <button onClick={() => { clearAllMessages(); setRows(messages()); }}
+                className="flex items-center gap-1 rounded-lg px-3 py-2 text-xs text-rose-300 bg-gray-800">
+                <Trash2 className="w-3.5 h-3.5" />一键清除消息
               </button>
-
-              {/* Clean noise messages button */}
-              {noiseTotalRows.length > 0 && (
-                <button
-                  onClick={() => {
-                    clearNoiseMessages();
-                    setRows(messages());
-                  }}
-                  className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-rose-300 px-2 py-1 rounded-lg bg-gray-800/70 hover:bg-gray-800 border border-gray-700/60 transition"
-                  title="一键彻底清空所有观察失效与摘要记录"
-                >
-                  <Trash2 className="w-3 h-3 text-rose-400" />
-                  <span>清空杂音({noiseTotalRows.length})</span>
-                </button>
-              )}
             </div>
 
             {/* Horizontal Category Chips with Live Badges */}
@@ -534,8 +493,10 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
                   const p = extractSignalParams(msg);
 
                   return (
-                    <article
-                      key={msg.id}
+                    <SwipeMessageRow key={msg.id} onDelete={()=>{
+                      deleteMessage(msg.id);
+                      if(expandedId===msg.id)setExpandedId(null);
+                    }}><article
                       className={`rounded-xl border transition-all duration-300 overflow-hidden ${
                         isExpanded
                           ? `bg-gradient-to-b from-[#181f30] to-[#131722] ${meta.borderActive} shadow-xl ring-1 ring-blue-500/20`
@@ -549,6 +510,7 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
                         role="button"
                         tabIndex={0}
                         aria-expanded={isExpanded}
+                        aria-label={`阅读消息：${msg.title}`}
                         onClick={() => handleCardClick(msg)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
@@ -617,7 +579,7 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
                       {/* Smooth Drawer Body (Expanded View) */}
                       <div
                         className={`transition-all duration-300 ease-in-out overflow-hidden ${
-                          isExpanded ? 'max-h-[850px] opacity-100' : 'max-h-0 opacity-0 pointer-events-none'
+                          isExpanded ? 'block opacity-100' : 'hidden'
                         }`}
                       >
                         <div className="px-3 pb-3 pt-1 border-t border-gray-800/80 bg-[#121622]/90 space-y-3">
@@ -683,7 +645,7 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
                                 )}
                               </button>
 
-                              {onSwitchTab && (p.isAI || msg.category === 'AI') && (
+                              {onSwitchTab && (p.isAI || msg.category === 'AI买入预警') && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -696,7 +658,7 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
                                 </button>
                               )}
 
-                              {onSwitchTab && (msg.category === '入场' || msg.category === '接近') && (
+                              {onSwitchTab && (msg.category === '入场' || msg.category === '准备入场') && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -725,7 +687,7 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
                           </div>
                         </div>
                       </div>
-                    </article>
+                    </article></SwipeMessageRow>
                   );
                 })
               ) : (
@@ -743,7 +705,7 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
                   )}
                   {activeTab === 'unread' && historyRows.length > 0 && (
                     <button
-                      onClick={() => setActiveTab('history')}
+                      onClick={() => {setReadingIds(new Set());setExpandedId(null);setActiveTab('history');}}
                       className="text-blue-400 hover:underline text-[11px]"
                     >
                       查看已读历史记录 ({historyRows.length})

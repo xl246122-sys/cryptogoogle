@@ -56,7 +56,7 @@ BINANCE_API_BASES = [
 from cryptog.config import *
 from cryptog.features import TechnicalIndicators, get_closed_candles
 from cryptog.market_state import diagnose_macro_trend, diagnose_cascade_downtrend
-from cryptog.cost_risk import entry_contract, entry_is_valid, model_targets
+from cryptog.cost_risk import entry_contract, entry_is_valid, model_targets, notification_ttl_ms
 from cryptog.lifecycle import _advance_rule_track
 from cryptog.strategy import validate_market_data_quality, verify_micro_range_reversal, _closed_breakout, observed_resistances, stable_range_box, recent_crash_confirmed, scan_symbol
 
@@ -211,7 +211,7 @@ def _num(value, default=0.0) -> float:
 
 def record_model_alert(sig: dict) -> str:
     """Append one alert. The same alert id is not written twice."""
-    alert_id = f"{sig['symbol']}_{sig['strategy']}_{sig['confirmation_time']}"
+    alert_id = sig.get("structure_key") or f"{sig['symbol']}_{sig['strategy']}_{sig['confirmation_time']}"
     now_ms = int(sig.get("timestamp") or time.time() * 1000)
     with LIBRARY_LOCK:
         _library_ensure()
@@ -223,7 +223,7 @@ def record_model_alert(sig: dict) -> str:
             "symbol": "BTCUSDT",
             "alertedAtMs": now_ms,
             "alertedAtCst": _iso_cst(now_ms),
-            "engineVersion": ENGINE_VERSION,
+            "engineVersion": V2_ENGINE_VERSION if sig.get("rule_version") == "short-horizon-v2" else ENGINE_VERSION,
             "strategy": sig.get("strategy"),
             "strategyNameZh": sig.get("strategy_name_zh"),
             "regime": sig.get("regime"),
@@ -249,7 +249,7 @@ def record_model_alert(sig: dict) -> str:
             "structureSupport": sig.get("structure_support"),
             "reasonZh": sig.get("reason_zh"),
             "winRateStatus": "历史胜率：未验证",
-            "tradeRules": {key: sig.get(key) for key in ("model", "rule_version", "max_hold_minutes", "min_net_tp1", "max_net_target", "invalidation_price", "tp1_fraction", "target_basis", "exit_rule")},
+            "tradeRules": {key: sig.get(key) for key in ("model", "rule_version", "max_hold_minutes", "min_net_tp1", "min_net_rr", "friction_pct", "max_net_target", "invalidation_price", "tp1_fraction", "target_basis", "exit_rule", "tier", "tier_label")},
         }
         OPEN_TRACKS[alert_id] = {
             "alertId": alert_id,
@@ -544,6 +544,33 @@ def execution_summary(fills):
             'closed': known and bought>0 and inventory<Decimal('0.0000000001'), 'slippage': slips, 'source': 'MANUAL_UNVERIFIED'}
 
 
+def _p2_on_fill(row: dict) -> None:
+    """Mirror a saved manual fill into the research ledger. A ledger error never rejects the fill."""
+    try:
+        fill = row.get('fill')
+        if not fill:
+            return
+        from cryptog.ledger import Ledger
+        ledger = Ledger(os.path.join(LIBRARY_DIR, 'research.sqlite3'))
+        try:
+            summary = row.get('executionSummary') or {}
+            closed = None if fill.get('side') != 'SELL' or 'closed' not in summary else bool(summary.get('closed'))
+            bars_1m = bars_15m = None
+            if RUNTIME is not None:
+                try:
+                    snap = RUNTIME.cache.snapshot(int(time.time() * 1000))
+                    series = snap.get('series') or {}
+                    bars_1m, bars_15m = series.get('1m') or [], series.get('15m') or []
+                except Exception as exc:
+                    logger.error('P2 fill cache unavailable: %s', type(exc).__name__)
+            ledger.on_fill(fill, signal_id=row.get('alertId'), latency=row.get('entryLatency'),
+                           inventory_closed=closed, bars_1m=bars_1m, bars_15m=bars_15m)
+        finally:
+            ledger.close()
+    except Exception as exc:
+        logger.error('P2 ledger fill skipped: %s', type(exc).__name__)
+
+
 def apply_user_action(payload: dict) -> dict:
     event_id = payload.get('eventId')
     try:
@@ -615,6 +642,7 @@ def apply_user_action(payload: dict) -> dict:
             ACTION_EVENTS[event_id] = row
             _project_action(row)
             _save_open_tracks(force=True)
+            _p2_on_fill(row)
         return {'ok': True, 'eventId': event_id, 'alertId': alert_id}
     except (ValueError, TypeError, OverflowError) as exc:
         return {'ok': False, 'eventId': event_id, 'error': str(exc)}
@@ -730,7 +758,8 @@ def start_model_library_server():
             if parsed.path == '/model-library/strategy-settings':
                 return self._json(200,{'ok':True,**RUNTIME.settings.get()})
             if parsed.path == '/model-library/market-state':
-                return self._json(200, RUNTIME.status() if RUNTIME else {'ok':False,'schema':1,'snapshot':None})
+                radar_only = (urllib.parse.parse_qs(parsed.query).get('view') or [''])[0] == 'radar'
+                return self._json(200, RUNTIME.status(radar_only=True) if RUNTIME and radar_only else RUNTIME.status() if RUNTIME else {'ok':False,'schema':1,'snapshot':None})
             if parsed.path == '/model-library/capabilities':
                 return self._json(200, {'ok': True, 'engineVersion': ENGINE_VERSION, 'userActionProtocol': 2})
             if parsed.path == '/model-library/opportunities':
@@ -871,7 +900,7 @@ except Exception as e:
 def fcm_payload(sig: dict) -> dict:
     """Field names match the Android client. Values are strings because FCM data is a string map."""
     fields = {
-        "id": f"{sig['symbol']}_{sig['strategy']}_{sig['confirmation_time']}",
+        "id": sig.get("structure_key") or f"{sig['symbol']}_{sig['strategy']}_{sig['confirmation_time']}",
         "symbol": "BTCUSDT",
         "signalType": "BUY",
         "strategy": sig["strategy"],
@@ -891,7 +920,7 @@ def fcm_payload(sig: dict) -> dict:
         "ruleScoreBreakdown": sig.get("rule_score_breakdown", ""),
         "decisionStatus": "BUY_CANDIDATE",
         "confirmationTime": sig["confirmation_time"],
-        "engineVersion": ENGINE_VERSION,
+        "engineVersion": V2_ENGINE_VERSION if sig.get("rule_version") == "short-horizon-v2" else ENGINE_VERSION,
         "reasonZh": sig["reason_zh"],
         "volatilityLevel": sig["volatility_level"],
         "quantilePct": sig["quantile_pct"],
@@ -907,14 +936,22 @@ def fcm_payload(sig: dict) -> dict:
         "volumeMultiplier": sig.get("volume_multiplier"),
         "vwapDiffPercent": sig.get("vwap_diff_percent"),
         "orderFlowImbalance": sig.get("order_flow_imbalance"),
-        "estimatedFriction": FRICTION_PCT,
+        "estimatedFriction": sig.get("friction_pct", FRICTION_PCT),
         "netProfitPct2": sig.get("net_tp2"),
         "structureSupportPrice": sig.get("structure_support"),
+        "tier": sig.get("tier"),
+        "tierLabel": sig.get("tier_label"),
+        "aiVerdict": sig.get("ai_verdict"),
+        "aiNote": sig.get("ai_note"),
+        "positionFractionPct": sig.get("position_fraction_pct"),
+        "breakevenPrice": sig.get("breakeven_price"),
+        "timeStopMinutes": sig.get("time_stop_minutes"),
         "tradeRules": json.dumps({"model": sig.get("model"), "ruleVersion": sig.get("rule_version"),
             "maxHoldMinutes": sig.get("max_hold_minutes"), "minNetTp1": sig.get("min_net_tp1"),
+            "minNetRr": sig.get("min_net_rr"), "frictionPct": sig.get("friction_pct"),
             "maxNetTarget": sig.get("max_net_target"), "invalidationPrice": sig.get("invalidation_price"),
             "tp1Fraction": sig.get("tp1_fraction"), "targetBasis": sig.get("target_basis"),
-            "exitRule": sig.get("exit_rule")}, ensure_ascii=False),
+            "exitRule": sig.get("exit_rule"), "tier": sig.get("tier"), "tierLabel": sig.get("tier_label")}, ensure_ascii=False),
     }
     return {k: str(v) for k, v in fields.items() if v is not None}
 
@@ -936,11 +973,12 @@ def send_fcm_alert(title: str, body: str, data: Optional[dict] = None) -> bool:
             data=payload_data,
             android=messaging.AndroidConfig(
                 priority="high",
-                ttl=datetime.timedelta(milliseconds=min(remaining_ms, ALERT_TTL_MS)),
+                ttl=datetime.timedelta(milliseconds=notification_ttl_ms(payload_data, remaining_ms)),
                 notification=messaging.AndroidNotification(
                     channel_id="shot_crypto_signals_v2",
                     sound="default",
                     default_vibrate_timings=True,
+                    tag=payload_data.get('eventId'),
                 )
             )
         )

@@ -4,11 +4,18 @@ import { test } from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SignalAlertModal } from '../src/components/SignalAlertModal';
-import { entryIssue, fetchEntryQuote, parseCloudSignal, signalTimeIssue } from '../src/services/signalValidity';
+import { entryIssue, fetchEntryQuote, parseCloudSignal, signalTimeIssue, aiEntryAllowed } from '../src/services/signalValidity';
 import { QuantEngine } from './legacy/quantEngine.v112';
 import { positionRuleNotice } from '../src/services/positionRules';
 
 const wire = JSON.parse(readFileSync(new URL('./signal_payload.fixture.json', import.meta.url), 'utf8'));
+test('AI card rejects expired, stale, non-BTC and nonfinite opportunities',()=>{
+  const now=1000000,q={price:100,timestamp:now};
+  const data={symbol:'BTCUSDT',signalType:'BUY',scenario:'FLASH_REBOUND_FAST',entryMin:99.9,entryMax:100.05,targetTP1:100.7,stopLoss:99.7,atMs:now,expiresAt:now+10000,cardText:'six fields'};
+  assert.ok(aiEntryAllowed(data,q,now));
+  for(const edit of [{symbol:'SUIUSDT'},{expiresAt:now},{targetTP1:Infinity},{targetTP1:100.69},{expiresAt:now+10001}]) assert.equal(aiEntryAllowed({...data,...edit},q,now),false);
+  assert.equal(aiEntryAllowed(data,{...q,timestamp:now-2001},now),false);
+});
 function sample() {
   const now = Date.now();
   const parsed = parseCloudSignal({ ...wire, timestamp: String(now), confirmationTime: String(now-1000), expiresAt: String(now+90000) });
@@ -107,6 +114,23 @@ test('expiry of a held position is independent of entry signal TTL and requires 
   assert.match(positionRuleNotice(item, s.tradeRules!.invalidationPrice, now)!, /失效位/);
   assert.match(positionRuleNotice(item, s.targetTP1, now)!, /50%/);
   assert.equal(item.positionEntryPrice, s.entryPrice); // Notices never auto-close positions.
+});
+test('short-horizon-v2 keeps the 0.50% net floor, 30 minute window and 0.24% friction', () => {
+  const now = Date.now();
+  const rules = { model: 'RANGE', ruleVersion: 'short-horizon-v2', maxHoldMinutes: 360, minNetTp1: 0.5,
+    minNetRr: 1, frictionPct: 0.24, maxNetTarget: null, invalidationPrice: 100.2, tp1Fraction: 0.5,
+    targetBasis: 'TP1', exitRule: 'TP1 卖 50%' };
+  const data = { ...wire, strategy: 'RANGE_OSCILLATION', id: 'BTCUSDT_S2_1', breakoutLevel: undefined,
+    entryPrice: '100.5', entryMin: '100.4', entryMax: '100.6', stopLoss: '100', targetTP1: '102', targetTP2: '103',
+    timestamp: String(now), confirmationTime: String(now - 1000), expiresAt: String(now + 20 * 60 * 1000),
+    estimatedFriction: '0.24', tradeRules: JSON.stringify(rules) };
+  const signal = parseCloudSignal(data);
+  assert.ok(signal);
+  assert.equal(signal.tradeRules?.ruleVersion, 'short-horizon-v2');
+  assert.equal(signalTimeIssue(signal, now), null);
+  assert.equal(entryIssue(signal, { price: 100.5, timestamp: now }, now), null);
+  assert.equal(parseCloudSignal({ ...data, tradeRules: JSON.stringify({ ...rules, minNetTp1: 0.4 }) }), null);
+  assert.ok(signalTimeIssue({ ...signal, expiresAt: signal.confirmationTime! + 31 * 60 * 1000 }, now));
 });
 test('modal renders the actual model exit fraction and holding limit', () => {
   const s=sample();

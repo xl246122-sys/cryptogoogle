@@ -1,3 +1,4 @@
+import json
 import math
 from typing import Dict, List, Optional, Tuple
 from .clock import clock as time
@@ -19,9 +20,10 @@ def entry_contract(entry: float, tp1: float, stop: float, confirmation_ms: int,
     reference_price = entry if reference_price is None else reference_price
     if not math.isfinite(reference_price) or reference_price <= 0:
         return None
+    floor = min_net_tp1 if min_net_tp1 and min_net_tp1 > 0 else MIN_NET_TP1
     lower = max(max(entry, reference_price) * (1 - MAX_ENTRY_DEVIATION_PCT / 100), stop * (1 + 1e-8), breakout_level or 0, invalidation_price or 0)
     upper = min(min(entry, reference_price) * (1 + MAX_ENTRY_DEVIATION_PCT / 100),
-                tp1 / (1 + (max(MIN_NET_TP1, min_net_tp1) + FRICTION_PCT) / 100),
+                tp1 / (1 + (floor + FRICTION_PCT) / 100),
                 (tp1 + MIN_NET_RR * stop) / ((1 + FRICTION_PCT / 100) * (1 + MIN_NET_RR)))
     if not lower <= entry <= upper:
         return None
@@ -29,6 +31,21 @@ def entry_contract(entry: float, tp1: float, stop: float, confirmation_ms: int,
             "expires_at": min(now_ms + ALERT_TTL_MS, confirmation_ms + SETUP_MAX_AGE_MS),
             "breakout_level": breakout_level}
 
+
+
+def notification_ttl_ms(payload: dict, remaining_ms: int) -> int:
+    """Baseline alerts stay on the 90s cap. Short-horizon alerts live with their entry window."""
+    cap = ALERT_TTL_MS
+    raw = (payload or {}).get("tradeRules")
+    try:
+        rules = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        if isinstance(rules, dict) and rules.get("ruleVersion") == "short-horizon-v1":
+            cap = 90 * 60 * 1000
+        if isinstance(rules, dict) and rules.get("ruleVersion") == "short-horizon-v2":
+            cap = 30 * 60 * 1000
+    except (TypeError, ValueError, json.JSONDecodeError):
+        pass
+    return max(0, min(int(remaining_ms), cap))
 
 
 def entry_is_valid(sig: dict, quote: Optional[dict], now_ms: Optional[int] = None) -> bool:
@@ -39,15 +56,21 @@ def entry_is_valid(sig: dict, quote: Optional[dict], now_ms: Optional[int] = Non
         price = float(quote["ask_price"])
         age = now_ms - int(quote["timestamp"])
         level = sig.get("breakout_level")
+        v2 = sig.get("rule_version") == "short-horizon-v2"
+        friction = V2_FRICTION_PCT if v2 else FRICTION_PCT
+        min_net = sig.get("min_net_tp1", V2_MIN_NET_TP1 if v2 else MIN_NET_TP1)
+        min_rr = sig.get("min_net_rr", V2_MIN_NET_RR if v2 else MIN_NET_RR)
+        net = (sig["target_tp1"] / price - 1) * 100 - friction
+        risk = (1 - sig["stop_loss"] / price) * 100
         return (math.isfinite(price) and price > 0 and 0 <= age <= QUOTE_MAX_AGE_MS
                 and sig["timestamp"] <= now_ms < sig["expires_at"]
                 and sig["entry_min"] <= price <= sig["entry_max"]
                 and sig["stop_loss"] < price < sig["target_tp1"]
                 and (level is None or price > level)
                 and price > sig.get("invalidation_price", sig["stop_loss"])
-                and (sig["target_tp1"] / price - 1) * 100 - FRICTION_PCT >= sig.get("min_net_tp1", MIN_NET_TP1) - 1e-9
-                and ((sig["target_tp1"] / price - 1) * 100 - FRICTION_PCT)
-                / ((1 - sig["stop_loss"] / price) * 100 + FRICTION_PCT) >= MIN_NET_RR - 1e-9)
+                and (not v2 or V2_STOP_MIN_PCT - 1e-9 <= risk <= V2_STOP_MAX_PCT + 1e-9)
+                and net >= min_net - 1e-9
+                and net / (risk + friction) >= min_rr - 1e-9)
     except (KeyError, ValueError, TypeError, ZeroDivisionError):
         return False
 

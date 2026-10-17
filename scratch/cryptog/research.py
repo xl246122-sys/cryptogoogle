@@ -71,6 +71,10 @@ def evaluate_research(bars,ticker,book,macro,now):
         gates += [('有效入场区间',contract is not None,'最新ask、收盘参考价、时效与固定目标复核')]
         row['checks']=[{'name':name,'passed':bool(ok),'detail':detail} for name,ok,detail in gates]
         row['reasons']=[name+'：'+detail for name,ok,detail in gates if not ok]
+        failed=[name for name,ok,detail in gates if not ok]
+        # Preparation is one final confirmation away; all cost/structure/anti-knife gates remain mandatory.
+        if contract and len(failed)==1 and failed[0] in ('主动买量改善','收复冲击结构'):
+            row['preparation']={'stopLoss':stop,'targetTP1':target,'netTP1':net,'netRR':rr,'waiting':failed[0]}
         if not row['reasons']:
             row['status']='SHADOW_CANDIDATE'
             row['candidate']={'id':f'{row["version"]}:{variant}:{last["close_time"]}','entry':ask,'stopLoss':stop,'invalidationPrice':invalidation,

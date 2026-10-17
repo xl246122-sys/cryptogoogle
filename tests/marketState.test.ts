@@ -7,6 +7,20 @@ const now=Date.now();
 const state=()=>({schema:1,ok:true,runtimeHealthy:true,feedHealthy:true,mode:'SHADOW',snapshot:{
   atMs:now,engineVersion:'Crypto-G stage1-dev',ruleVersion:'three-models-v1',status:'WAIT_CONFIRMATION',
   macro:{trend:'BULLISH',ma20:100,rsi:55,reason:'服务端说明'},reasons:['空间不足']}});
+test('the trend card prefers the live hour and the live environment', () => {
+  const s: any = state();
+  s.snapshot.macro.liveRsi = 46.2;
+  s.snapshot.macro.liveMa20 = 81560.25;
+  s.snapshot.shortHorizonV2 = {
+    env: { states: { d1: 'ABOVE_99', h4: 'DOWN', h1: 'DOWN' }, score: -32, label: 'closed' },
+    displayEnv: { states: { d1: 'ABOVE_99', h4: 'DOWN', h1: 'UP' }, score: 8, label: 'live' },
+  };
+  const m = parseMarketState(s, now);
+  assert.equal(m.hourlyRsi, 46.2);
+  assert.equal(m.hourlyMa20, 81560.25);
+  assert.equal(m.layers?.h1, '多头');
+  assert.equal(m.layers?.h4, '空头');
+});
 test('server state is authoritative and shadow does not imply buying',()=>{
   const m=parseMarketState(state(),now);assert.equal(m.dataReady,true);assert.match(m.regimeNameZh,/不推送新买入/);
   assert.match(m.regimeDescription,/空间不足/);assert.equal(m.volatility,undefined);
@@ -66,6 +80,43 @@ test('bands come from healthy snapshots and invalid values are hidden',()=>{
 test('only validated cloud data can report synchronized trend',()=>{
  assert.equal(parseMarketState(state(),now).stateSource,'SERVER');
  assert.equal(parseMarketState(state(),now+10001).stateSource,'UNAVAILABLE');
+});
+
+test('v2 snapshot carries environment, watch countdown and the release lab', () => {
+  const s: any = state();
+  s.snapshot.ruleVersion = 'short-horizon-v2';
+  s.snapshot.engineVersion = 'Crypto-G V1.47';
+  s.snapshot.shortHorizonV2 = {
+    env: {states: {d1: 'UP', h4: 'DOWN', h1: 'ABOVE_99'}, score: 12, label: '1D 多头 · 4H 空头 · 1H 多头回调（评分 +12）'},
+    levels: [{name: '日线 EMA99', price: 100}, {name: '坏价', price: 0}],
+    candidates: [{module: 'S2', name: '支撑回踩', issue: '盈亏比不足'}],
+  };
+  s.snapshot.signal = {rule_version: 'short-horizon-v2', module: 'S1', strategy_name_zh: '急跌收回', tier_label: '观察级·未验证', expires_at: now + 60000};
+  s.evolution = {promotions: 0, modules: [{module: 'S1', stage: 'RESEARCH', label: '研究', push: true, tierLabel: '观察级·未验证', records: 0}],
+    l1: {status: 'INSUFFICIENT', applied: true, samples: 3}, hypotheses: [{module: 'S1', claim: '量能过滤', status: 'PENDING_P4', applied: true}]};
+  s.context = {healthy: true};
+  s.derivatives = {healthy: false};
+  s.shortHorizonV2 = {breaker: {pausedUntil: 0, consecutiveStops: 0, dayR: 0, reason: null}};
+  const m = parseMarketState(s, now);
+  assert.equal(m.layers?.d1, '多头');
+  assert.equal(m.layers?.h4, '空头');
+  assert.equal(m.levels?.length, 1);
+  assert.equal(m.watchCandidates?.[0].expiresAt, now + 60000);
+  assert.equal(m.watchCandidates?.[1].issue, '盈亏比不足');
+  assert.equal(m.lab?.source, 'SERVER');
+  assert.equal(m.lab?.l1.applied, false);
+  assert.equal(m.lab?.hypotheses[0].applied, false);
+  s.continuity = {
+    cost: {month: '2026-09', frictionPct: 0.31, floorPct: 0.24, measuredPct: 0.31, source: 'FILLS', applied: true},
+    environment: {quarter: '2026-Q3', cutoff: 10, priorCutoff: 0, status: 'HELD', applied: true},
+  };
+  const withJobs = parseMarketState(s, now);
+  assert.equal(withJobs.lab?.continuity?.cost?.applied, false);
+  assert.equal(withJobs.lab?.continuity?.cost?.frictionPct, 0.31);
+  assert.equal(withJobs.lab?.continuity?.environment?.applied, false);
+  assert.equal(withJobs.lab?.continuity?.environment?.cutoff, 10);
+  assert.equal(m.freshness?.context, '1D/4H/1H 新鲜');
+  assert.equal(m.breaker?.state, '未熔断');
 });
 
 test('connection failure never promotes local quotes to a cloud trend',async()=>{

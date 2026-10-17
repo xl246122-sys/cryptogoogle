@@ -5,6 +5,47 @@ from .config import *
 from .features import TechnicalIndicators, get_closed_candles
 
 
+def live_hourly_reading(closed_bars: Optional[List[dict]], price: Optional[float]) -> Optional[dict]:
+    """Display-only 1h RSI and MA20. The last close is the live price, so the card moves during the hour."""
+    if not closed_bars or not isinstance(price, (int, float)) or not math.isfinite(price) or price <= 0:
+        return None
+    closes = []
+    for bar in closed_bars:
+        close = bar.get("close") if isinstance(bar, dict) else None
+        if not isinstance(close, (int, float)) or not math.isfinite(close) or close <= 0:
+            return None
+        closes.append(float(close))
+    if len(closes) < 15:
+        return None
+    candles = [{"close": close} for close in closes] + [{"close": float(price)}]
+    return {
+        "liveRsi": TechnicalIndicators.rsi(candles, 14),
+        "liveMa20": TechnicalIndicators.sma([candle["close"] for candle in candles], 20),
+    }
+
+
+def present_market(decision: Optional[dict]) -> Optional[dict]:
+    """Phone copy. Trading decisions keep the closed-bar RSI and 15m environment."""
+    if not isinstance(decision, dict):
+        return decision
+    macro = decision.get("macro")
+    if isinstance(macro, dict) and isinstance(macro.get("liveRsi"), (int, float)) and isinstance(macro.get("liveMa20"), (int, float)):
+        macro["rsi"] = macro["liveRsi"]
+        macro["ma20"] = macro["liveMa20"]
+    view = decision.get("shortHorizonV2")
+    display = view.get("displayEnv") if isinstance(view, dict) else None
+    env = view.get("env") if isinstance(view, dict) else None
+    if isinstance(display, dict) and isinstance(display.get("states"), dict) and isinstance(env, dict):
+        shown = dict(env)
+        shown["states"] = display["states"]
+        if isinstance(display.get("score"), int):
+            shown["score"] = display["score"]
+        if isinstance(display.get("label"), str):
+            shown["label"] = display["label"]
+        view["env"] = shown
+    return decision
+
+
 def diagnose_macro_trend(btc_hourly_candles: Optional[List[dict]], btc_ticker: Optional[dict]) -> dict:
     btc_hourly_candles = get_closed_candles(btc_hourly_candles or [])
     if not btc_hourly_candles or len(btc_hourly_candles) < 15 or not btc_ticker:

@@ -12,10 +12,42 @@ export interface InboxMessage {
 
 const KEY = 'cryptog_inbox_v1';
 const PENDING_FOCUS_KEY = 'cryptog_pending_focus_id';
+const CLEAR_KEY = 'cryptog_inbox_cleared_at';
+const CYCLE_KEY = 'cryptog_inbox_cycle_start';
+const DELETED_KEY = 'cryptog_inbox_deleted_ids';
+const CLEAR_INTERVAL = 3 * 60 * 60 * 1000;
+
+export function clearAllMessages(now = Date.now()) {
+  const old = JSON.parse(localStorage.getItem(KEY) || '[]') as InboxMessage[];
+  const ids = new Set<string>(JSON.parse(localStorage.getItem(DELETED_KEY) || '[]'));
+  old.forEach(m => ids.add(m.id));
+  localStorage.setItem(DELETED_KEY, JSON.stringify([...ids]));
+  localStorage.setItem(CLEAR_KEY, String(now));
+  localStorage.setItem(CYCLE_KEY, String(now));
+  localStorage.removeItem(PENDING_FOCUS_KEY);
+  save([]);
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('cryptog-inbox-cleared'));
+}
+
+export function autoClearMessages(now = Date.now()) {
+  const start = Number(localStorage.getItem(CYCLE_KEY));
+  if (!start) localStorage.setItem(CYCLE_KEY, String(now));
+  else if (now - start >= CLEAR_INTERVAL) clearAllMessages(now);
+}
+
+export function normalizedCategory(category: string, title='', extra: any={}): string {
+  if (/测试|摘要/.test(title) || ['测试','观察','摘要'].includes(category)) return '';
+  if (['AI','AI买入预警'].includes(category)) return 'AI买入预警';
+  if (['阶段预警','接近','准备入场'].includes(category)) return '准备入场';
+  if (['退出','离场'].includes(category)) return '离场';
+  if (category==='失效') return extra?.eventType==='ENTRY_INVALIDATED' ? '离场' : '';
+  return category==='入场' ? category : '';
+}
 
 export function messages(): InboxMessage[] {
   try {
-    return JSON.parse(localStorage.getItem(KEY) || '[]');
+    autoClearMessages();
+    return (JSON.parse(localStorage.getItem(KEY) || '[]') as InboxMessage[]).map(m => ({...m, category: normalizedCategory(m.category,m.title,m.extra)})).filter(m => !!m.category);
   } catch {
     return [];
   }
@@ -37,6 +69,8 @@ export function ingestMessage(data: any) {
     data.deliveryId ||
     (data.title ? `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}` : null);
   if (typeof id !== 'string') return;
+  autoClearMessages();
+  if ((JSON.parse(localStorage.getItem(DELETED_KEY) || '[]') as string[]).includes(id)) return;
 
   // 1. Resolve Title
   const rawTitle = data.title || data.notification?.title || data.strategyNameZh || data.scenarioNameZh;
@@ -102,32 +136,22 @@ export function ingestMessage(data: any) {
   }
 
   // 3. Resolve Category
-  const category =
-    data.eventType === 'AI_BUY_ALERT' || (data.source && String(data.source).includes('AI'))
-      ? 'AI'
-      : data.signalType === 'BUY'
-      ? '入场'
-      : data.eventType === 'POSITION_EXIT_NOTICE'
-      ? '退出'
-      : /测试/.test(title)
-      ? '测试'
-      : /失效/.test(title)
-      ? '失效'
-      : /摘要/.test(title)
-      ? '摘要'
-      : /接近/.test(title)
-      ? '接近'
-      : '观察';
+  const category = normalizedCategory(
+    data.eventType === 'AI_BUY_ALERT' ? 'AI买入预警' :
+    data.eventType === 'PREPARE_ENTRY' || data.eventType === 'AI_STAGE_ALERT' ? '准备入场' :
+    data.eventType === 'POSITION_EXIT_NOTICE' || data.eventType === 'ENTRY_INVALIDATED' ? '离场' :
+    data.signalType === 'BUY' ? '入场' : /接近/.test(title) ? '准备入场' : '', title, data);
 
   const rows = messages();
   const existingIdx = rows.findIndex((r) => r.id === id);
   const at = Number(data.issuedAtMs || data.timestamp || Number(data.expiresAt) - 90000) || Date.now();
+  if (!category || at <= Number(localStorage.getItem(CLEAR_KEY))) return;
   const updatedItem: InboxMessage = { id, title, body, at, category, read: false, extra: data };
 
   if (existingIdx >= 0) {
     // If existing message only had the vague placeholder "请查看最新状态", replace it with rich data!
     const existing = rows[existingIdx];
-    if (existing.body === '请查看最新状态' || !existing.body || existing.title === 'Crypto-G 通知') {
+    if (data.lifecycle || existing.body === '请查看最新状态' || !existing.body || existing.title === 'Crypto-G 通知') {
       const nextRows = [...rows];
       nextRows[existingIdx] = { ...existing, title, body, category, extra: data };
       save(nextRows);
@@ -151,6 +175,9 @@ export function clearReadMessages() {
 }
 
 export function deleteMessage(id: string) {
+  const ids = new Set<string>(JSON.parse(localStorage.getItem(DELETED_KEY) || '[]'));
+  ids.add(id);
+  localStorage.setItem(DELETED_KEY,JSON.stringify([...ids]));
   save(messages().filter((m) => m.id !== id));
 }
 
@@ -203,6 +230,7 @@ export function getAndClearPendingFocus(): string | null {
 }
 
 export async function syncInbox() {
+  autoClearMessages();
   try {
     const c = connection();
     const response = await fetch(`${c.url}/model-library/market-state`, {

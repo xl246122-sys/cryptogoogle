@@ -69,7 +69,7 @@ export const RadarView: React.FC<RadarViewProps> = ({
               }`}
             ></span>
           </span>
-          <span className="font-semibold text-[#e2e2e8]">{macroTrend.dataReady && macroTrend.stateSource === 'SERVER' ? 'BTC 云端趋势已同步' : '云端趋势待更新'}</span>
+          <span className="font-semibold text-[#e2e2e8]">{macroTrend.dataReady && macroTrend.stateSource === 'SERVER' ? 'BTC 云端趋势已同步' : macroTrend.stateSource === 'CACHE' ? '上次趋势 · 正在同步' : '正在连接云端趋势'}</span>
           <span className="text-[#9aa0a6] font-mono text-[11px] px-1.5 py-0.2 rounded bg-[#1f242e]">
             行情刷新 {scanIntervalSec}s
           </span>

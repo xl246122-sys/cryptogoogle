@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import {
   fetchAIState,
+  getInitialAIState,
   verifyAIConnection,
   updateAIConfig,
   triggerAIAnalysis,
@@ -36,11 +37,18 @@ import {
   AIConfig,
 } from '../../services/aiEngine';
 import { binanceService } from '../../services/binanceService';
-import { MarketTicker } from '../../types/crypto';
+import { MacroTrendAnalysis, MarketTicker } from '../../types/crypto';
+import { ReviewCard } from '../HorizonPanels';
 
-export const AIQuantView: React.FC = () => {
+export function apiSwitchLabel(live: boolean, enabled: boolean, provider?: string) {
+  if (!live) return '状态同步中';
+  const name = provider === 'GEMINI' ? 'Gemini' : 'DeepSeek';
+  return enabled ? `${name} 已开` : `${name} 已关`;
+}
+
+export const AIQuantView: React.FC<{ macroTrend?: MacroTrendAnalysis }> = ({ macroTrend }) => {
   // State from backend/local
-  const [state, setState] = useState<AIState | null>(null);
+  const [state, setState] = useState<AIState | null>(getInitialAIState);
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,8 +103,10 @@ export const AIQuantView: React.FC = () => {
 
   useEffect(() => {
     loadState();
+    const resume = () => { if (document.visibilityState === 'visible') void loadState(); };
+    document.addEventListener('visibilitychange', resume);
     const timer = setInterval(loadState, 15000);
-    return () => clearInterval(timer);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', resume); };
   }, [showConfig]);
 
   // Subscribe to Global AI Scheduler events and smooth clock ticker
@@ -210,14 +220,17 @@ AI量化分析理由: ${evalData.summaryZh}`;
   };
 
   const latestEval = state?.lastEvaluation;
-  const isBuy = latestEval?.isBuy && Number(latestEval.expiresAt) > Date.now();
+  const isBuy = state?.ok && !state?.isLocalOnly && latestEval?.isBuy && Number(latestEval.expiresAt) > Date.now();
   const btcPrice = btcTicker?.price ?? 0;
   const btcChange = btcTicker?.change24h ?? 0;
-  const isMasterEnabled = state?.config?.enabled ?? true;
+  const isMasterEnabled = state?.config?.enabled ?? false;
+  const liveState = Boolean(state?.ok && !state?.isLocalOnly);
+  const apiName = state?.config?.provider === 'GEMINI' ? 'Gemini' : 'DeepSeek'; 
 
   // Pretty model display name
   const getModelLabel = () => {
-    const curModel = state?.config?.model || model;
+    if (!state) return '正在同步模型';
+    const curModel = state.config.model;
     if (curModel.includes('3.8-flash')) return 'Gemini 3.8 Flash';
     if (curModel.includes('2.5-flash')) return 'Gemini 2.5 Flash';
     if (curModel.includes('2.5-pro')) return 'Gemini 2.5 Pro';
@@ -228,16 +241,17 @@ AI量化分析理由: ${evalData.summaryZh}`;
 
   return (
     <div className="space-y-3 pb-6 animate-fadeIn">
+      <ReviewCard market={macroTrend} />
       <section className="rounded-2xl border border-indigo-500/25 bg-[#141824] p-3 space-y-2.5">
         <div className="flex items-center justify-between gap-2">
           <h1 className="flex items-center gap-2 text-sm font-semibold text-white min-w-0">
             <BrainCircuit className="w-4 h-4 shrink-0 text-indigo-400" />
-            <span className="whitespace-nowrap">BTC AI 量化大脑</span>
+            <span className="whitespace-nowrap">复盘与假设</span>
           </h1>
-          <button onClick={handleToggleMasterSwitch} aria-label={isMasterEnabled ? '暂停 AI 监控' : '开启 AI 监控'}
-            className={`shrink-0 flex items-center gap-1.5 min-h-9 px-2 rounded-lg text-[11px] whitespace-nowrap border ${isMasterEnabled ? 'text-emerald-300 border-emerald-800 bg-emerald-950/40' : 'text-gray-400 border-gray-700 bg-gray-800'}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${isMasterEnabled ? 'bg-emerald-400' : 'bg-gray-500'}`} />
-            {isMasterEnabled ? '监控已开' : '监控暂停'}
+          <button disabled={!liveState} onClick={handleToggleMasterSwitch} aria-label={!liveState ? `${apiName} 状态同步中` : isMasterEnabled ? `关闭 ${apiName} API` : `开启 ${apiName} API`}
+            className={`shrink-0 flex items-center gap-1.5 min-h-9 px-2 rounded-lg text-[11px] whitespace-nowrap border ${liveState && isMasterEnabled ? 'text-emerald-300 border-emerald-800 bg-emerald-950/40' : 'text-gray-400 border-gray-700 bg-gray-800'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${liveState && isMasterEnabled ? 'bg-emerald-400' : 'bg-gray-500'}`} />
+            {apiSwitchLabel(liveState, isMasterEnabled, state?.config?.provider)}
           </button>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px]">
@@ -248,7 +262,7 @@ AI量化分析理由: ${evalData.summaryZh}`;
           </div>
         </div>
         <div className="grid grid-cols-[1fr_auto] gap-2 border-t border-gray-800 pt-2.5">
-          <button onClick={handleTriggerAnalysis} disabled={analyzing}
+          <button onClick={handleTriggerAnalysis} disabled={analyzing || !liveState}
             className="flex items-center justify-center gap-1.5 min-h-10 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white disabled:opacity-50">
             <Zap className={`w-3.5 h-3.5 ${analyzing ? 'animate-pulse' : ''}`} />
             {analyzing ? '正在分析…' : '立即分析'}
@@ -444,7 +458,13 @@ AI量化分析理由: ${evalData.summaryZh}`;
       )}
 
       {/* 4. Main Decision Verdict Display (Buy Signal or Defense/Standby) */}
-      {latestEval ? (
+      {!liveState ? (
+        <div className="rounded-2xl border border-gray-700 bg-[#141824] p-4 text-xs text-gray-300 space-y-2">
+          <strong>{state?.cachedAtMs ? '已恢复上次记录 · 正在同步' : state?.error ? '云端暂未连接' : '正在连接云端 AI'}</strong>
+          <p>{state?.cachedAtMs ? `上次更新 ${new Date(state.cachedAtMs).toLocaleString()}，实时状态确认后更新。` : '正在读取已保存的模型和推演记录，请稍候。'}</p>
+          <button onClick={() => void loadState()} className="text-indigo-300">重新同步</button>
+        </div>
+      ) : latestEval ? (
         isBuy ? (
           <div className="rounded-xl border border-emerald-700 bg-emerald-950/20 p-4 text-xs space-y-3">
             <strong>BTC 交易预警卡片</strong>
@@ -490,9 +510,11 @@ AI量化分析理由: ${evalData.summaryZh}`;
       ) : (
         <div className="rounded-2xl border border-gray-800 bg-[#121622] p-4 text-center space-y-1.5 text-xs text-gray-400 shadow-md">
           <Bot className="w-7 h-7 mx-auto text-indigo-400/80 mb-1" />
-          <p className="text-white font-medium">AI 监控就绪</p>
+          <p className="text-white font-medium">{isMasterEnabled ? `${apiName} 已开启` : `${apiName} 已关闭`}</p>
           <p className="text-[11px] text-gray-500">
-            等待下一个 5 分钟 K 线收盘自动推演，或点击上方“立即分析”。
+            {isMasterEnabled
+              ? `系统监控一直开启。等待下一个 5 分钟 K 线收盘后由 ${apiName} 推演，或点击上方“立即分析”。`
+              : `系统监控一直开启，不能从这里关闭。上方开关只控制 ${apiName} API。`}
           </p>
         </div>
       )}
@@ -510,14 +532,15 @@ AI量化分析理由: ${evalData.summaryZh}`;
       <div className="rounded-2xl border border-gray-800/80 bg-[#121520] p-3.5 space-y-2 shadow-md">
         <div className="flex items-center justify-between text-xs text-gray-400">
           <div className="flex items-center gap-3">
-            <span>总推演: <strong className="text-white font-mono">{state?.evalCount ?? 0}</strong> 次</span>
-            <span>买入机会: <strong className="text-emerald-400 font-mono">{state?.buyCount ?? 0}</strong> 次</span>
+            <span>总推演: <strong className="text-white font-mono">{state?.evalCount ?? '—'}</strong> 次</span>
+            <span>模型建议: {state?.suggestedCount ?? '—'} · 拦截: {state?.rejectedCount ?? '—'}</span>
+            <span>买入机会: <strong className="text-emerald-400 font-mono">{state?.buyCount ?? '—'}</strong> 次</span>
           </div>
           <button
             onClick={() => setShowHistory(!showHistory)}
             className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium transition"
           >
-            <span>历史记录 ({state?.recentEvaluations?.length || 0})</span>
+            <span>历史记录 ({state?.recentEvaluations?.length ?? '—'})</span>
             {showHistory ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>
         </div>
@@ -556,12 +579,21 @@ AI量化分析理由: ${evalData.summaryZh}`;
         <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-3 text-gray-300 [&::-webkit-details-marker]:hidden">
           <span className="flex items-center gap-1.5"><Activity className="w-3.5 h-3.5 text-indigo-400" />运行状态</span>
           <span className="flex items-center gap-2 text-[10px]">
-            <span className={error ? 'text-amber-300' : 'text-gray-400'}>{error ? '连接或分析异常' : !state ? '正在同步' : !state.hasApiKey ? '待配置密钥' : state.isAnalyzing ? '分析中' : !isMasterEnabled ? '监控暂停' : '计划已开启'}</span>
+            <span className={error ? 'text-amber-300' : 'text-gray-400'}>{error ? '连接或分析异常' : !liveState ? '正在同步' : '系统监控运行中'}</span>
             <ChevronDown className="w-3.5 h-3.5 group-open:rotate-180 transition-transform" />
           </span>
         </summary>
         <div className="border-t border-gray-800 p-3 space-y-2.5">
-          <p className="text-[11px] text-gray-400">{state?.config.connectionStatus === 'VERIFIED' ? 'API 已验证' : state?.hasApiKey ? '密钥已保存，连接待验证' : '尚未配置密钥'}</p>
+          <details className="rounded-lg border border-gray-700 p-2 text-[11px] text-gray-400">
+            <summary className="cursor-pointer">服务端入场核查 · V1.43发布时的24小时快照</summary>
+            <p className="mt-2">毛收益下限0.7%，净收益下限0.59%；三个策略开关均开启。</p>
+            <p>扫描 {entryAudit.events24h.EVALUATION} 次；入场候选 {entryAudit.events24h.BUY_CANDIDATE} 条；两条均获推送服务接受，手机实收未确认。</p>
+            <p>AI推演 {entryAudit.ai24h[0]} 次，有效买入 {entryAudit.ai24h[1]} 次。</p>
+            <p className="mt-1">每分钟抽样的主要拦截原因（非实时计数）：</p>
+            {entryAudit.rejectionSamples.slice(0,3).map(([reason,count])=><p key={String(reason)}>{String(reason)}：{count}次</p>)}
+            <p className="mt-1">每3小时自动清空消息，当前列表不能代表全天发送记录。</p>
+          </details>
+          <p className="text-[11px] text-gray-400">{!liveState ? '连接状态正在确认' : state?.config.connectionStatus === 'VERIFIED' ? 'API 已验证' : state?.hasApiKey ? '密钥已保存，连接待验证' : '尚未配置密钥'}</p>
           <button onClick={handleToggleWakeLock} className="min-h-9 px-2 rounded-lg border border-gray-700 text-[11px] text-gray-400">屏幕常亮：{keepScreenOn ? '开' : '关'}</button>
         {/* Live Countdown & Stats Strip */}
         <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
@@ -579,16 +611,16 @@ AI量化分析理由: ${evalData.summaryZh}`;
           </div>
           <div className="rounded-xl bg-black/30 border border-gray-800/80 px-2.5 py-1.5 flex items-center justify-between">
             <span className="text-gray-400">📊 累计分析:</span>
-            <span className="font-bold text-white">{state?.evalCount || 0} 次</span>
+            <span className="font-bold text-white">{state?.evalCount ?? '—'} 次</span>
           </div>
         </div>
 
         <p className="text-[11px] text-gray-400 leading-relaxed">
           {isMasterEnabled && state?.hasApiKey
-            ? '云端按已收盘K线持续调度；异常时显示具体原因与重试时间。手机无需保持常亮。'
+            ? `系统监控一直开启。${apiName} 按已收盘 K 线调度；异常时显示具体原因与重试时间。手机无需保持常亮。`
             : !state?.hasApiKey
-            ? '请点击“模型与密钥配置”输入 Gemini 或 DeepSeek API Key 激活自主监控。'
-            : 'AI 智能监控已手动暂停，点击上方“AI监控: 已暂停”开关可立即重新开启。'}
+            ? `系统监控一直开启，不能关闭。配置 ${apiName} API Key 后，上方开关只打开或关闭模型分析。`
+            : `${apiName} API 已关闭。系统监控仍在运行。点击上方开关可重新打开模型分析。`}
         </p>
 
         {latestEval && (
@@ -610,7 +642,8 @@ AI量化分析理由: ${evalData.summaryZh}`;
         <div className="border-t border-gray-800 p-3 space-y-2 text-[11px] text-gray-400 leading-relaxed">
           <p>实时监测：追踪 BTC 盘口与价格变化。</p>
           <p>定时分析：按已收盘的 5 分钟 K 线独立分析。</p>
-          <p>突发加速：急跌或异常放量时提前唤醒分析。</p>
+          <p>秒级急跌：独立检测10秒至5分钟成交窗口，依次提醒行情出现、企稳候选与有效买入。</p>
+          <p>四类机会：暴跌反弹、急跌瞬时回弹、区间震荡、趋势突破。仅提醒BTC，不推算UNI/SUI收益。</p>
         </div>
       </details>
       <details className="group rounded-xl border border-gray-800 bg-[#121622] text-xs">
@@ -621,9 +654,10 @@ AI量化分析理由: ${evalData.summaryZh}`;
         <div className="border-t border-gray-800 p-3 space-y-2 text-[11px] text-gray-400 leading-relaxed">
           <p>价格区间：最新卖一价未超过建议买入上限，超出即失效。</p>
           <p>止损结构：价格未跌破防守位，扣费净盈亏比 ≥ 1.10:1。</p>
-          <p>交易成本：扣除 0.11% 手续费与滑点，净 TP1 ≥ 0.40%。</p>
+          <p>目标空间：毛收益 ≥ 0.70%；按0.11%成本假设，净 TP1 ≥ 0.59%。结构空间不足则等待。</p>
         </div>
       </details>
     </div>
   );
 };
+import entryAudit from '../../../audit/v143-entry-diagnosis.json';

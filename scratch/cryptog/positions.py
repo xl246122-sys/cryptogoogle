@@ -3,8 +3,44 @@ import hashlib
 import json
 import math
 from decimal import Decimal
+from .ai_review import decorate_exit_message
+from .stop_monitor import classify_exit
 
-def project_positions(actions, tracks, now_ms, bid=None, quote_at=None):
+def _average_entry(rows, fallback):
+    num = den = Decimal(0)
+    for row in rows:
+        fill = row['fill']
+        if fill['side'] != 'BUY' or fill.get('price') is None:
+            continue
+        qty = Decimal(str(fill['quantity']))
+        num += Decimal(str(fill['price'])) * qty
+        den += qty
+    return float(num / den) if den else fallback
+
+def v2_notice(contract, rows, bought, disposed, inventory, entry_at, now_ms, bid, fresh, series):
+    """Exit reminder for a short-horizon-v2 plan. Returns (kind, quantity, message)."""
+    entry = _average_entry(rows, contract.get('entry_price'))
+    stop, tp1, tp2 = contract['stop_loss'], contract['target_tp1'], contract['target_tp2']
+    invalidation = contract['invalidation_price']
+    sold = disposed >= bought * Decimal(str(contract['tp1_fraction'])) - Decimal('0.00000001')
+    bars = series or {}
+    found = classify_exit(
+        bid, now_ms, entry, entry_at, stop, tp1, tp2, invalidation, contract.get('reclaim_price'),
+        contract.get('breakeven_price'), sold, contract['max_hold_minutes'],
+        contract.get('time_stop_minutes') or 90, contract.get('time_stop_progress_r') or 0.3,
+        bars.get('1m'), bars.get('15m'), bars.get('1h'), fresh)
+    if found is None:
+        return None, inventory, None
+    kind, message = found
+    message = decorate_exit_message(kind, message, contract)
+    if kind == 'TP1_PARTIAL_EXIT':
+        quantity = min(inventory, max(Decimal(0), bought * Decimal(str(contract['tp1_fraction'])) - disposed))
+        if quantity <= 0:
+            return None, inventory, None
+        return kind, quantity, message
+    return kind, inventory, message
+
+def project_positions(actions, tracks, now_ms, bid=None, quote_at=None, series=None):
     replaced={r.get('replacesEventId') for r in actions if r.get('replacesEventId')}
     groups={}
     for row in actions:
@@ -49,8 +85,12 @@ def project_positions(actions, tracks, now_ms, bid=None, quote_at=None):
             report['reason']='INVALID_EXIT_PLAN';reports.append(report);continue
         deadline=entry_at+contract['max_hold_minutes']*60000
         report.update(status='MONITORING',deadlineMs=deadline,timeApproximate=approximate)
-        kind=None;quantity=inventory
-        if now_ms>=deadline: kind='TIME_EXIT_APPROXIMATE' if approximate else 'TIME_EXIT'
+        kind=None;quantity=inventory;message=None
+        if contract.get('rule_version') == 'short-horizon-v2':
+            kind, quantity, message = v2_notice(contract, rows, bought, disposed, inventory, entry_at, now_ms, bid, fresh, series)
+            if kind is None and not fresh:
+                report['reason'] = 'QUOTE_UNAVAILABLE'
+        elif now_ms>=deadline: kind='TIME_EXIT_APPROXIMATE' if approximate else 'TIME_EXIT'
         elif fresh:
             if bid<=contract['stop_loss']: kind='STOP_EXIT'
             elif bid<=contract['invalidation_price']: kind='INVALIDATION_EXIT'
@@ -64,16 +104,16 @@ def project_positions(actions, tracks, now_ms, bid=None, quote_at=None):
             report['notice']={'id':'exit-'+identity,'eventType':'POSITION_EXIT_NOTICE','positionId':position,
                 'alertId':alert_id,'revision':revision,'kind':kind,'quantity':float(quantity),'atMs':now_ms,
                 'observedBid':bid if fresh else None,'quoteAtMs':quote_at if fresh else None,
-                'timeApproximate':approximate,'message':'按记录的退出规则核对剩余持仓；提醒不代表已成交，系统未自动卖出。'}
+                'timeApproximate':approximate,'message':message or '按记录的退出规则核对剩余持仓；提醒不代表已成交，系统未自动卖出。'}
         reports.append(report)
     return reports
 
-def monitor_positions(library,store,now_ms,bid=None,quote_at=None):
+def monitor_positions(library,store,now_ms,bid=None,quote_at=None,series=None):
     # Copy under the legacy ledger lock; do not hold it while SQLite writes.
     import copy
     with library.LIBRARY_LOCK:
         library._library_ensure()
         actions=copy.deepcopy(list(library.ACTION_EVENTS.values()))
         tracks=copy.deepcopy(library.OPEN_TRACKS)
-    reports=project_positions(actions,tracks,now_ms,bid,quote_at)
+    reports=project_positions(actions,tracks,now_ms,bid,quote_at,series)
     return store.reconcile_positions(reports,now_ms)

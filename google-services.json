@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "790946633140",
+    "project_id": "crypto-49cb0",
+    "storage_bucket": "crypto-49cb0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:790946633140:android:af5acc697c45f60b3f4ee1",
+        "android_client_info": {
+          "package_name": "com.lu.cryptogoolge"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDtX4G6DAerIMGnapKjJB4T2-l0ada8JqY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

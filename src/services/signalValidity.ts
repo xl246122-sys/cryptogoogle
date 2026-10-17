@@ -1,7 +1,16 @@
 import type { TradeSignal, SignalStrategy, MarketRegime, TradeRules } from '../types/crypto';
 
-export const SIGNAL_POLICY = { maxAgeMs: 120_000, ttlMs: 90_000, quoteAgeMs: 10_000, friction: 0.11, minNet: 0.40, minRR: 1.10 };
+export const SIGNAL_POLICY = { maxAgeMs: 120_000, ttlMs: 90_000, quoteAgeMs: 10_000, friction: 0.11, minNet: 0.59, minRR: 1.10 };
 export interface EntryQuote { price: number; timestamp: number }
+export function aiEntryAllowed(data: Record<string, unknown>, quote: EntryQuote | null, now=Date.now()): boolean {
+  if(data.symbol!=='BTCUSDT' || data.signalType!=='BUY' || !quote || !data.cardText) return false;
+  const fast=data.scenario==='FLASH_REBOUND_FAST';
+  const [min,max,tp,sl,at,expires]=['entryMin','entryMax','targetTP1','stopLoss','atMs','expiresAt'].map(k=>Number(data[k]));
+  if(![min,max,tp,sl,at,expires,quote.price,quote.timestamp].every(v=>Number.isFinite(v)&&v>0)) return false;
+  if(at>now+5000 || expires<=now || expires<=at || expires-at>(fast?10000:90000) || quote.timestamp>now+1000 || now-quote.timestamp>(fast?2000:10000)) return false;
+  const ask=quote.price,net=(tp/ask-1)*100-SIGNAL_POLICY.friction,risk=(1-sl/ask)*100+SIGNAL_POLICY.friction;
+  return sl<min && min<=ask && ask<=max && max<tp && net>=SIGNAL_POLICY.minNet-1e-9 && risk>0 && net/risk>=SIGNAL_POLICY.minRR;
+}
 export const finiteNumber = (value: unknown): number | undefined => {
   if ((typeof value !== 'string' && typeof value !== 'number') || value === '') return undefined;
   const n = Number(value);
@@ -19,16 +28,25 @@ export function parseCloudSignal(data: Record<string, unknown>): TradeSignal | n
   const entry = n('entryPrice'), tp1 = n('targetTP1'), tp2 = n('targetTP2'), sl = n('stopLoss');
   let tradeRules: TradeRules;
   try { tradeRules = JSON.parse(String(data.tradeRules)); } catch { return null; }
-  const model = { BURST_BREAKOUT: 'BREAKOUT', FLASH_CRASH_REBOUND: 'REBOUND', RANGE_OSCILLATION: 'RANGE' }[String(data.strategy)];
-  if (!tradeRules || !model || tradeRules.model !== model || !['three-models-v1','experimental-v1'].includes(tradeRules.ruleVersion)) return null;
-  const experiment=tradeRules.ruleVersion==='experimental-v1';
-  const requiredMin = experiment || model === 'BREAKOUT' ? 0.4 : 1;
-  if ((experiment ? ![60,90,120].includes(tradeRules.maxHoldMinutes) : tradeRules.maxHoldMinutes !== (model === 'REBOUND' ? 90 : 240)) || tradeRules.minNetTp1 !== requiredMin
-      || tradeRules.maxNetTarget !== (experiment || model === 'BREAKOUT' ? null : model === 'REBOUND' ? 6 : 4)
-      || !Number.isFinite(tradeRules.invalidationPrice) || tradeRules.invalidationPrice < sl || tradeRules.invalidationPrice >= entry
+  const model = { BURST_BREAKOUT: 'BREAKOUT', FLASH_CRASH_REBOUND: 'REBOUND', RANGE_OSCILLATION: 'RANGE', TREND_PULLBACK_BUY: 'PULLBACK' }[String(data.strategy)];
+  const versions = ['three-models-v1','experimental-v1','three-models-v2','experimental-v2','short-horizon-v1','short-horizon-v2'];
+  if (!tradeRules || !model || tradeRules.model !== model || !versions.includes(tradeRules.ruleVersion)) return null;
+  const experiment=tradeRules.ruleVersion.startsWith('experimental-');
+  const short = tradeRules.ruleVersion === 'short-horizon-v1';
+  const v2 = tradeRules.ruleVersion === 'short-horizon-v2';
+  const requiredMin = short ? (tradeRules.maxHoldMinutes === 45 ? 0.4 : 0.59) : tradeRules.ruleVersion.endsWith('-v2') && !v2 ? SIGNAL_POLICY.minNet : experiment || model === 'BREAKOUT' ? 0.4 : 1;
+  const holdBad = v2
+    ? tradeRules.maxHoldMinutes !== 360 || Math.abs(tradeRules.minNetTp1 - 0.5) > 1e-9 || tradeRules.maxNetTarget !== null || Math.abs(tradeRules.tp1Fraction - 0.5) > 1e-9
+    : short
+    ? !((tradeRules.maxHoldMinutes === 45 && Math.abs(tradeRules.minNetTp1 - 0.4) < 1e-9) || (tradeRules.maxHoldMinutes === 240 && Math.abs(tradeRules.minNetTp1 - 0.59) < 1e-9))
+    : (experiment ? ![60, 90, 120].includes(tradeRules.maxHoldMinutes) : tradeRules.maxHoldMinutes !== (model === 'REBOUND' ? 90 : 240));
+  if (!v2 && (holdBad || Math.abs(tradeRules.minNetTp1 - requiredMin) > 1e-9
+      || tradeRules.maxNetTarget !== (short || experiment || model === 'BREAKOUT' ? null : model === 'REBOUND' ? 6 : 4))) return null;
+  if (v2 && holdBad) return null;
+  if (!Number.isFinite(tradeRules.invalidationPrice) || tradeRules.invalidationPrice < sl || tradeRules.invalidationPrice >= entry
       || !Number.isFinite(tradeRules.tp1Fraction) || tradeRules.tp1Fraction <= 0 || tradeRules.tp1Fraction > 1
       || typeof tradeRules.exitRule !== 'string' || typeof tradeRules.targetBasis !== 'string') return null;
-  if (tradeRules.tp1Fraction !== (tp1 === tp2 ? 1 : model === 'BREAKOUT' ? 0.5 : model === 'REBOUND' ? 0.7 : 1)) return null;
+  if (!v2 && tradeRules.tp1Fraction !== (tp1 === tp2 ? 1 : model === 'BREAKOUT' ? 0.5 : model === 'REBOUND' ? 0.7 : 1)) return null;
   if (!(sl > 0 && sl < entry && entry < tp1 && tp1 <= tp2 && n('entryMin') > sl && n('entryMin') <= entry && entry <= n('entryMax') && n('entryMax') < tp1)) return null;
   if (n('ruleScore') < 0 || n('ruleScore') > 100 || typeof data.id !== 'string' || !data.id) return null;
   const breakoutLevel = finiteNumber(data.breakoutLevel);
@@ -46,6 +64,10 @@ export function parseCloudSignal(data: Record<string, unknown>): TradeSignal | n
     timeHorizon: typeof data.timeHorizon === 'string' ? data.timeHorizon : '未提供', confidence: n('ruleScore'), ruleScore: n('ruleScore'),
     decisionStatus: 'WAIT_CONFIRMATION', confirmationTime: n('confirmationTime'), timestamp: n('timestamp'),
     expiresAt: n('expiresAt'), entryMin: n('entryMin'), entryMax: n('entryMax'), breakoutLevel,
+    tierLabel: typeof data.tierLabel === 'string' ? data.tierLabel : typeof data.tier_label === 'string' ? data.tier_label : undefined,
+    aiExplain: typeof data.aiExplain === 'string' ? data.aiExplain : typeof data.ai_explain === 'string' ? data.ai_explain : undefined,
+    positionFractionPct: finiteNumber(data.positionFractionPct) ?? finiteNumber(data.position_fraction_pct),
+    timeStopMinutes: finiteNumber(data.timeStopMinutes) ?? finiteNumber(data.time_stop_minutes),
     engineVersion: typeof data.engineVersion === 'string' ? data.engineVersion : undefined, tradeRules,
     regime: regimes[String(data.regime)] ?? 'UNKNOWN',
     reasonZh: typeof data.reasonZh === 'string' ? data.reasonZh : '模型分析未提供', analysis, read: false,
@@ -55,7 +77,11 @@ export function parseCloudSignal(data: Record<string, unknown>): TradeSignal | n
 export function signalTimeIssue(signal: TradeSignal, now = Date.now()): string | null {
   const { timestamp, confirmationTime, expiresAt } = signal;
   if (![timestamp, confirmationTime, expiresAt, signal.entryMin, signal.entryMax].every(v => typeof v === 'number' && Number.isFinite(v) && v > 0)) return '缺少有效期或入场区间，请等待新版信号';
-  if (timestamp > now + 5000 || confirmationTime! > timestamp || expiresAt! <= timestamp || expiresAt! - timestamp > SIGNAL_POLICY.ttlMs || expiresAt! - confirmationTime! > SIGNAL_POLICY.maxAgeMs) return '信号时间异常，禁止入场';
+  const short = signal.tradeRules?.ruleVersion === 'short-horizon-v1';
+  const v2 = signal.tradeRules?.ruleVersion === 'short-horizon-v2';
+  const ttl = v2 || short ? (v2 ? 30 : 90) * 60 * 1000 : SIGNAL_POLICY.ttlMs;
+  const maxAge = v2 || short ? (v2 ? 30 : 90) * 60 * 1000 : SIGNAL_POLICY.maxAgeMs;
+  if (timestamp > now + 5000 || confirmationTime! > timestamp || expiresAt! <= timestamp || expiresAt! - timestamp > ttl || expiresAt! - confirmationTime! > maxAge) return '信号时间异常，禁止入场';
   if (now >= expiresAt!) return '信号已过期，禁止按旧信号入场';
   return null;
 }
@@ -68,9 +94,17 @@ export function entryIssue(signal: TradeSignal, quote: EntryQuote | null, now = 
   if (signal.tradeRules && quote.price <= signal.tradeRules.invalidationPrice) return '当前价格已触及该模型失效位';
   if (quote.price < signal.entryMin! || quote.price > signal.entryMax!) return '当前价格已离开有效入场区间';
   if (!(signal.stopLoss < quote.price && quote.price < signal.targetTP1)) return '当前价格已触及止盈或止损边界';
-  const net = (signal.targetTP1 / quote.price - 1) * 100 - SIGNAL_POLICY.friction;
-  const risk = (1 - signal.stopLoss / quote.price) * 100 + SIGNAL_POLICY.friction;
-  if (net < Math.max(SIGNAL_POLICY.minNet, signal.tradeRules?.minNetTp1 ?? SIGNAL_POLICY.minNet) - 1e-9 || risk <= 0 || net / risk < SIGNAL_POLICY.minRR - 1e-9) return '当前价格扣预设成本后的收益/盈亏比不足';
+  const v2 = signal.tradeRules?.ruleVersion === 'short-horizon-v2';
+  const friction = v2 ? (signal.tradeRules?.frictionPct ?? 0.24) : SIGNAL_POLICY.friction;
+  const minRR = v2 ? (signal.tradeRules?.minNetRr ?? 1) : SIGNAL_POLICY.minRR;
+  const net = (signal.targetTP1 / quote.price - 1) * 100 - friction;
+  const risk = (1 - signal.stopLoss / quote.price) * 100 + friction;
+  const floor = v2
+    ? (signal.tradeRules?.minNetTp1 ?? 0.5)
+    : signal.tradeRules?.ruleVersion === 'short-horizon-v1'
+    ? (signal.tradeRules.minNetTp1 ?? SIGNAL_POLICY.minNet)
+    : Math.max(SIGNAL_POLICY.minNet, signal.tradeRules?.minNetTp1 ?? SIGNAL_POLICY.minNet);
+  if (net < floor - 1e-9 || risk <= 0 || net / risk < minRR - 1e-9) return '当前价格扣预设成本后的收益/盈亏比不足';
   return null;
 }
 

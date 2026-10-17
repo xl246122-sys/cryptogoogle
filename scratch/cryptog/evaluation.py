@@ -3,11 +3,22 @@ import copy
 import math
 from .clock import at_time
 from .diagnostics import capture
-from .config import ENGINE_VERSION, RULE_VERSION, TRADE_POLICIES, FRICTION_PCT
+from .config import ENGINE_VERSION, RULE_VERSION, TRADE_POLICIES, FRICTION_PCT, V2_ENGINE_VERSION, V2_FRICTION_PCT, V2_RULE_VERSION
 from .features import TechnicalIndicators
-from .market_state import diagnose_macro_trend
+from .market_state import diagnose_macro_trend, live_hourly_reading
 from .strategy import scan_symbol
 from .market import INTERVALS
+
+def _stamp_live_hour(macro, bars, ticker):
+    if not isinstance(macro, dict):
+        return macro
+    reading = live_hourly_reading(bars, ticker.get('price') if isinstance(ticker, dict) else None)
+    if not reading:
+        return macro
+    shown = dict(macro)
+    shown.update(reading)
+    return shown
+
 
 def evaluate(snapshot):
     s = copy.deepcopy(snapshot)
@@ -51,6 +62,25 @@ def evaluate(snapshot):
             limits = {'1m':47,'5m':47,'15m':95,'1h':47,'4h':47}
             bars = {k:v[-limits[k]:] for k,v in s['series'].items()}
             ticker = s['ticker']
+            if 'context' in s:
+                from .engine_v2 import scan
+                signal, reasons, view = scan(
+                    bars['15m'], bars['5m'], bars['1m'], ticker['ask_price'], book,
+                    s.get('context'), now, s.get('breaker'), s.get('derivatives'))
+                result.update(engineVersion=V2_ENGINE_VERSION, ruleVersion=V2_RULE_VERSION,
+                              assumedFrictionPct=V2_FRICTION_PCT, signal=signal,
+                              status='BUY_CANDIDATE' if signal else 'WAIT_CONFIRMATION',
+                              reasons=reasons, shortHorizonV2=view)
+                try:
+                    from .research import evaluate_research
+                    macro = diagnose_macro_trend(bars['1h'], ticker)
+                    result['macro'] = macro if macro['trend'] != 'INSUFFICIENT' else None
+                    result['research'] = evaluate_research(bars, ticker, book, macro, now)
+                except Exception as exc:
+                    result['research'] = [{'mode':'SHADOW','status':'ERROR','version':'recovery-shadow-v1',
+                                           'label':'研究评估异常','reasons':['RESEARCH_ERROR:'+type(exc).__name__]}]
+                result['macro'] = _stamp_live_hour(result.get('macro'), bars['1h'], ticker)
+                return result
             macro = diagnose_macro_trend(bars['1h'], ticker)
             result['macro'] = macro if macro['trend'] != 'INSUFFICIENT' else None
             if len(bars['15m']) >= 64:
@@ -67,6 +97,7 @@ def evaluate(snapshot):
             except Exception as exc:
                 result['research'] = [{'mode':'SHADOW','status':'ERROR','version':'recovery-shadow-v1',
                                        'label':'研究评估异常','reasons':['RESEARCH_ERROR:'+type(exc).__name__]}]
+            result['macro'] = _stamp_live_hour(result.get('macro'), bars['1h'], ticker)
     except (ValueError, KeyError, TypeError, OverflowError) as exc:
         result.update(status='BLOCK_ENTRY', signal=None, macro=None, volatility=None, reasons=['INVALID_INPUT:'+str(exc)])
     return result

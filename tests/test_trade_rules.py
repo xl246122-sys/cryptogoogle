@@ -31,14 +31,14 @@ class TradeRuleTests(unittest.TestCase):
             self.assertIsNone(m.model_targets(model, 100., 99.5, [100.4, 108.]))
             self.assertIsNone(m.model_targets(model, 100., 99.5, []))
 
-    def test_one_percent_net_is_admission_not_target_floor(self):
-        self.assertIsNotNone(m.model_targets('BREAKOUT',100.,99.8,[101.]))
-        self.assertIsNone(m.model_targets('RANGE',100.,99.8,[101.]))
-        self.assertIsNone(m.model_targets('REBOUND',100.,99.8,[101.]))
+    def test_uniform_gross_floor_does_not_inflate_targets(self):
+        for model in m.TRADE_POLICIES:
+            self.assertIsNotNone(m.model_targets(model,100.,99.8,[101.]))
+            self.assertIsNone(m.model_targets(model,100.,99.8,[100.7]))
         target = m.model_targets('RANGE',100.,99.8,[102.])
         self.assertIsNotNone(target)
         self.assertLess(target['target_tp1'],102.)
-        self.assertGreaterEqual(target['net_tp1'],1.)
+        self.assertGreaterEqual(target['net_tp1'],.59)
 
     def test_caps_only_lower_targets_and_no_stop_compression(self):
         for model, cap in [('RANGE',4.), ('REBOUND',6.)]:

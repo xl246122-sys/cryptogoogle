@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { TradeSignal, WatchlistItem } from '../types/crypto';
+import { PlanFacts } from './HorizonPanels';
 import { EntryQuote, entryIssue, fetchEntryQuote, signalTimeIssue } from '../services/signalValidity';
 import {
   X,
@@ -178,9 +179,10 @@ export const SignalAlertModal: React.FC<SignalAlertModalProps> = ({
             <p>{actionIssue || validityIssue || '报价在有效区间内；以下止盈止损仍是生成时的参考值。'}</p>
             <p>有效区间：{signal.entryMin ? formatPrice(signal.entryMin) : '未提供'} – {signal.entryMax ? formatPrice(signal.entryMax) : '未提供'}</p>
             <p>有效至：{signal.expiresAt ? new Date(signal.expiresAt).toLocaleTimeString() : '未提供'} · 当前卖一价：{quoteSignalId === signal.id && quote ? formatPrice(quote.price) : '等待复核'}</p>
+            <PlanFacts signal={signal} />
           </div>
           {signal.tradeRules && <div className="p-3 rounded-xl border border-[#2b313f] text-[#c4c7c5] space-y-1">
-            <p>独立规则：{({BREAKOUT: '突破', REBOUND: '暴跌反弹', RANGE: '区间震荡'})[signal.tradeRules.model]} · {signal.tradeRules.ruleVersion}</p>
+            <p>独立规则：{({BREAKOUT: '突破', REBOUND: '暴跌反弹', RANGE: '区间震荡', PULLBACK: '趋势回踩'})[signal.tradeRules.model]} · {signal.tradeRules.ruleVersion}</p>
             <p>失效位：{formatPrice(signal.tradeRules.invalidationPrice)} · 最长持有 {signal.tradeRules.maxHoldMinutes} 分钟</p>
             <p>空间门槛：扣预设成本后 TP1 ≥{signal.tradeRules.minNetTp1}%；不足即跳过。</p>
             <p>目标依据：{signal.tradeRules.targetBasis}</p>

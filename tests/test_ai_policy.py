@@ -12,9 +12,12 @@ class PolicyTests(unittest.TestCase):
     def test_module_constraints_and_anchor(self):
         self.assertEqual(trade_plan(self.decision,self.snapshot,67005.)['scenarioNameZh'],'区间震荡')
         for changes in ({'hold_minutes':500},{'summary_zh':'长'*26},{'target_tp1':67300.},
-                        {'stop_loss':66900.},{'anchor_time_ms':0},{'scenario':'ORDERBOOK_ABSORPTION'}):
+                        {'stop_loss':66990.},{'anchor_time_ms':0},{'scenario':'ORDERBOOK_ABSORPTION'}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 trade_plan({**self.decision,**changes},self.snapshot,67005.)
+
+    def test_real_structure_has_no_artificial_minimum_stop_distance(self):
+        self.assertEqual(trade_plan({**self.decision,'stop_loss':66900.},self.snapshot,67005.)['structureLow'],66980.)
 
     def test_structure_dedup_not_time_cooldown(self):
         sig=dict(module='RANGE_SUPPORT_BOUNCE',entryMin=66950,entryMax=67100,entryPrice=67005,structureLow=66980)

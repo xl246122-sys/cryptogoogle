@@ -35,7 +35,7 @@ export function validateFill(fill: ExecutionFill, now = Date.now()): string | nu
 }
 
 export function summarizeFills(fills: ExecutionFill[]) {
-  let inventory = 0, cost = 0, realized = 0, fees = 0, feesKnown = true, bought = 0, sold = 0;
+  let inventory = 0, cost = 0, realized = 0, fees = 0, feesKnown = true, bought = 0, sold = 0, invested = 0;
   const seen = new Set<string>();
   const exchangeIds = new Set<string>();
   const slippage: {fillId: string; quoteDifferenceUsdt: number | null; benchmarkAgeMs: number | null}[] = [];
@@ -52,7 +52,7 @@ export function summarizeFills(fills: ExecutionFill[]) {
     // BTC commission changes inventory; do not also subtract its USDT value.
     const cashFee = f.commissionAsset === 'BTC' ? 0 : (converted ?? 0);
     if (f.side === 'BUY') {
-      inventory += f.quantity - baseFee; cost += f.price * f.quantity + cashFee; bought += f.quantity;
+      inventory += f.quantity - baseFee; cost += f.price * f.quantity + cashFee; bought += f.quantity; invested += f.price * f.quantity + cashFee;
     } else {
       const consumed = f.quantity + baseFee;
       if (consumed > inventory + 1e-10 || inventory <= 0) throw new Error('卖出数量（含 BTC 手续费）超过已记录持仓，请先补齐买入');
@@ -64,7 +64,9 @@ export function summarizeFills(fills: ExecutionFill[]) {
       quoteDifferenceUsdt: f.referencePrice === null ? null : (f.side === 'BUY' ? f.price - f.referencePrice : f.referencePrice - f.price) * f.quantity,
       benchmarkAgeMs: f.referenceAtMs === null ? null : f.executedAtMs - f.referenceAtMs});
   }
-  return {inventory: feesKnown ? inventory : null, inventoryBeforeUnknownFees: inventory, remainingCostUsdt: feesKnown ? cost : null,
+  return {investedUsdt: feesKnown ? invested : null,
+    wholeTradeNetPct: feesKnown && invested > 0 && inventory < 1e-10 ? realized / invested * 100 : null,
+    accountingVersion: 'actual-cashflow-v2.1', inventory: feesKnown ? inventory : null, inventoryBeforeUnknownFees: inventory, remainingCostUsdt: feesKnown ? cost : null,
     realizedNetUsdt: feesKnown ? realized : null, feeUsdt: feesKnown ? fees : null, feesKnown, bought, sold,
     closed: feesKnown && bought > 0 && inventory < 1e-10, slippage, source: 'MANUAL_UNVERIFIED' as const};
 }

@@ -1,0 +1,179 @@
+{
+  "versionName": "1.58",
+  "versionCode": 158,
+  "apkSha256": "49bec113c2b56be3324edf268cefce057ba3d1bac263b4ceef4f74bfa5355eb4",
+  "packageSha256": "5f62f70c44e3cfc52fbfd7833d273fb4476b8bf7c0ac56fcd6d79c35dff69541",
+  "backendFiles": {
+    "cryptog/runtime.py": {
+      "old": "48dd9591df162aa7fdb4cf651d8304b6e0ed67d0b49ea89a24320fdbfcc81da2",
+      "new": "234181f6d1c3843f190e43405b55c23cbcba61d0a495700746684382d2081ee6"
+    },
+    "cryptog/wave_integration.py": {
+      "old": null,
+      "new": "cb0b423c1b982981234dade4aa3866d3b72737f15f312a87f5b6255176743124"
+    }
+  },
+  "deployed": true,
+  "deploymentBlocker": null,
+  "newTradeTierEnabled": false,
+  "expectedBaseNote": "Reconstructed pre-C local CRLF runtime; server hash must match. Do not override mismatch without diff review.",
+  "deployment": {
+    "backup": "/opt/shotcrypto/backups/wave-v158-20261018-094146",
+    "parallelReplay": 120,
+    "mismatches": 0,
+    "hashes": {
+      "cryptog/runtime.py": "234181f6d1c3843f190e43405b55c23cbcba61d0a495700746684382d2081ee6",
+      "cryptog/wave_integration.py": "cb0b423c1b982981234dade4aa3866d3b72737f15f312a87f5b6255176743124"
+    },
+    "databaseBackupSha256": "7ae5fcfa90c61ebd0b26d80ed749b6429ca357c1c386c0fd2cfc5f91c0c249f5"
+  },
+  "verification": {
+    "atMs": 1792316628777,
+    "service": "active",
+    "trustedServerTLS": true,
+    "unauthenticatedStatus": 401,
+    "authenticatedEndpointVerified": false,
+    "flags": {
+      "CRYPTOG_ENABLE_BASELINE_ALERTS": "1",
+      "CRYPTOG_ENABLE_EXIT_ALERTS": "1",
+      "CRYPTOG_ENABLE_WAVE_RESEARCH": "UNSET"
+    },
+    "modules": [
+      {
+        "module": "S1",
+        "stage": "RESEARCH",
+        "registered": false,
+        "push": true,
+        "tier": "WATCH",
+        "tierLabel": "观察级·未验证"
+      },
+      {
+        "module": "S2",
+        "stage": "RESEARCH",
+        "registered": false,
+        "push": true,
+        "tier": "WATCH",
+        "tierLabel": "观察级·未验证"
+      },
+      {
+        "module": "S3",
+        "stage": "RESEARCH",
+        "registered": false,
+        "push": true,
+        "tier": "WATCH",
+        "tierLabel": "观察级·未验证"
+      },
+      {
+        "module": "S4",
+        "stage": "RESEARCH",
+        "registered": false,
+        "push": true,
+        "tier": "WATCH",
+        "tierLabel": "观察级·未验证"
+      }
+    ],
+    "qualifiedTradeModules": [],
+    "freshEvaluationSamples": [
+      {
+        "atMs": 1792316618764,
+        "evaluationAtMs": 1792316618351,
+        "ageMs": 413
+      },
+      {
+        "atMs": 1792316620764,
+        "evaluationAtMs": 1792316620351,
+        "ageMs": 413
+      },
+      {
+        "atMs": 1792316622764,
+        "evaluationAtMs": 1792316622351,
+        "ageMs": 413
+      },
+      {
+        "atMs": 1792316624764,
+        "evaluationAtMs": 1792316624351,
+        "ageMs": 413
+      },
+      {
+        "atMs": 1792316626764,
+        "evaluationAtMs": 1792316626356,
+        "ageMs": 408
+      }
+    ],
+    "hashes": {
+      "cryptog/runtime.py": "234181f6d1c3843f190e43405b55c23cbcba61d0a495700746684382d2081ee6",
+      "cryptog/wave_integration.py": "cb0b423c1b982981234dade4aa3866d3b72737f15f312a87f5b6255176743124"
+    }
+  },
+  "baselineBuyPushEnabled": true,
+  "positionExitPushEnabled": true,
+  "authenticatedEndpointVerification": "PASSED",
+  "apkSignatureMatchesV157": true,
+  "authenticatedEndpointEvidence": {
+    "atMs": 1792317222899,
+    "host": "43.163.203.127",
+    "trustedTLS": true,
+    "unauthenticatedStatus": 401,
+    "authenticatedStatus": 200,
+    "health": {
+      "ok": true,
+      "runtimeHealthy": true,
+      "feedHealthy": true,
+      "notificationHealthy": true,
+      "exitNotificationHealthy": true
+    },
+    "mode": "BASELINE",
+    "waveResearch": {
+      "mode": "DISABLED",
+      "tradeEligible": false
+    },
+    "samples": [
+      {
+        "atMs": 1792317196681,
+        "healthy": true,
+        "snapshotAgeMs": 283
+      },
+      {
+        "atMs": 1792317199873,
+        "healthy": true,
+        "snapshotAgeMs": 475
+      },
+      {
+        "atMs": 1792317203091,
+        "healthy": true,
+        "snapshotAgeMs": 693
+      },
+      {
+        "atMs": 1792317206257,
+        "healthy": false,
+        "snapshotAgeMs": -141
+      },
+      {
+        "atMs": 1792317209458,
+        "healthy": true,
+        "snapshotAgeMs": 60
+      },
+      {
+        "atMs": 1792317212857,
+        "healthy": true,
+        "snapshotAgeMs": 459
+      },
+      {
+        "atMs": 1792317216091,
+        "healthy": true,
+        "snapshotAgeMs": 693
+      },
+      {
+        "atMs": 1792317219647,
+        "healthy": true,
+        "snapshotAgeMs": 249
+      },
+      {
+        "atMs": 1792317222899,
+        "healthy": true,
+        "snapshotAgeMs": 501
+      }
+    ],
+    "passed": true
+  }
+}

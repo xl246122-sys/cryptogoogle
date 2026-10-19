@@ -1,8 +1,9 @@
 import React, {useEffect,useState} from 'react';
-import {exitLabels,fetchPositions,reviewNotice,type PositionState} from '../services/positions';
+import {exitLabels,fetchPositions,reviewNotice,type PositionState,saveAccountContext} from '../services/positions';
 
 const reasons:Record<string,string>={QUOTE_UNAVAILABLE:'行情不可用，无法判断价格退出',NO_VERIFIED_EXIT_PLAN:'缺少关联退出计划',INVALID_EXIT_PLAN:'退出计划无效',BTC_FEE_UNKNOWN:'BTC 手续费未知，剩余数量无法确认',INVALID_INVENTORY:'成交库存不一致',POSITION_LINK_CONFLICT:'关联机会冲突'};
 export function PositionMonitor() {
+  const [equity,setEquity]=useState('');const [coverage,setCoverage]=useState(false);
   const [state,setState]=useState<PositionState|null>(null);
   const [error,setError]=useState('');
   const [receipts,setReceipts]=useState<Record<string,number>>({});
@@ -31,12 +32,23 @@ export function PositionMonitor() {
     <h2 className="font-semibold text-amber-200">实际持仓 · 退出观察</h2>
     <p className="text-amber-200">{state?.pushEnabled?'服务端已启用设备推送，手机投递效果仍待实测。':'影子验证中，服务端未启用退出推送。'} 提醒不代表成交，请自行管理风险。</p>
     {(error || !state?.fresh) && <p role="status" className="text-red-300">{error || '持仓状态过期'}；保留的数据仅供核对，不能视为正在保护持仓。</p>}
+    <details><summary>账户风险（手工记录范围）</summary>
+      <p>余额来源：手工、未经交易所核验。超过 15 分钟需重新核对；未覆盖全部持仓时不计算账户风险金额。</p>
+      <input aria-label="账户权益 USDT" value={equity} onChange={e=>setEquity(e.target.value)} placeholder="当前账户权益 USDT" className="bg-black p-2"/>
+      <label><input type="checkbox" checked={coverage} onChange={e=>setCoverage(e.target.checked)}/>已补齐全部 BTC 多单</label>
+      <button onClick={async()=>{try{await saveAccountContext(Number(equity),coverage);setState(await fetchPositions());}catch(e){setReviewError(String(e));}}}>保存核对时间与权益</button>
+      <p>已知未平仓 {state?.accountRisk?.knownOpenPositions ?? '—'} 笔 · {state?.accountRisk?.coverageComplete?'用户声明覆盖完整':'覆盖不完整'}</p>
+      <p>合计计划风险：{state?.fresh && state.accountRisk?.fresh && state.accountRisk.totalPlannedRiskUsdt!==null?`${state.accountRisk.totalPlannedRiskUsdt.toFixed(2)} USDT`:'未知'}</p>
+      <p>单笔 0.5% 风险预算：{state?.fresh && state.accountRisk?.fresh && state.accountRisk.singleTradeRiskBudgetUsdt!==null?`${state.accountRisk.singleTradeRiskBudgetUsdt.toFixed(2)} USDT`:'未知'}</p>
+      <p>余额核对时间：{state?.accountRisk?.updatedMs?new Date(state.accountRisk.updatedMs).toLocaleString():'未提供'}</p>
+    </details>
     {state?.fresh && state.positions.length===0 && <p>服务端暂无已同步的手工成交持仓记录。</p>}
     {state?.positions.map(p=><article key={p.positionId} className="border-t border-gray-700 pt-2 space-y-1">
       <p className="break-all">{p.positionId} · {p.status==='CLOSED'?'已记录平仓':p.status==='MONITORING'?'按记录观察':'无法管理'}</p>
       <p>剩余 BTC：{p.remainingQuantity??'未知'} · 更新：{new Date(p.atMs).toLocaleString()}</p>
       {p.deadlineMs && <p>持有到期：{new Date(p.deadlineMs).toLocaleString()}</p>}
       {p.reason && <p className="text-amber-200">{reasons[p.reason]||'退出状态需核对'}</p>}
+      {p.overdueUnclosed && <p className="text-red-300">超时未平仓：提醒或确认不代表卖出，请补录实际成交。</p>}
       {p.unresolvedNotices.map(n=><div key={n.id} className="p-2 bg-red-950/30 rounded-lg space-y-1">
         <p>{exitLabels[n.kind]} · 待核对数量 {n.quantity} BTC</p>
         <p>首次触发 {new Date(n.atMs).toLocaleString()}；历史触发不表示当前价格仍满足条件。</p>

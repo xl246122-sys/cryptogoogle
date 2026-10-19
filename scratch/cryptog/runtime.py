@@ -39,8 +39,16 @@ class Runtime:
         Path(library.LIBRARY_DIR).mkdir(parents=True,exist_ok=True)
         backup_legacy(library.LIBRARY_DIR)
         self.store = EventStore(str(Path(library.LIBRARY_DIR)/'monitor-v1.sqlite3'))
+        self.wave = None
+        if os.environ.get('CRYPTOG_ENABLE_WAVE_RESEARCH') == '1':
+            from .wave_integration import WaveIntegration
+            self.wave = WaveIntegration(str(Path(library.LIBRARY_DIR)/'wave-research.sqlite3'))
+        from .capacity import CapacityMonitor
+        self.capacity = CapacityMonitor(self.store, library.LIBRARY_DIR)
         from .strategy_settings import StrategySettings
         self.settings=StrategySettings(self.store)
+        from .account_context import AccountContext
+        self.account_context=AccountContext(self.store)
         self.feed = BinanceFeed(self.cache,self.stop)
         self.live = os.environ.get('CRYPTOG_ENABLE_BASELINE_ALERTS') == '1'
         from .v2_tracker import V2Tracker
@@ -80,6 +88,10 @@ class Runtime:
         except Exception as exc:
             library.logger.error('P2 ledger unavailable: %s', type(exc).__name__)
         self.worker.ledger = self.ledger
+        from .review_bridge import review_options
+        self.worker.review_options = lambda: review_options(self.ai)
+        from .research_feed import SpotResearchFeed
+        self.research_feed = SpotResearchFeed(str(Path(library.LIBRARY_DIR)/'research.sqlite3'), self.stop)
         self.engine_b = {}
         self._housekeeping_ms = 0
 
@@ -111,6 +123,7 @@ class Runtime:
     def _guard_fields(self, now):
         fields = {}
         for key, obj, method in (
+            ('capacity', getattr(self, 'capacity', None), 'status'),
             ('shortHorizonV2', getattr(self, 'tracker', None), 'status'),
             ('context', getattr(self, 'context_feed', None), 'health'),
             ('derivatives', getattr(self, 'derivatives', None), 'health'),
@@ -131,12 +144,13 @@ class Runtime:
         from .market_state import present_market
         with self.lock:
             result = present_market(copy.deepcopy(self.latest))
+            evidence = copy.deepcopy(getattr(self, 'presentation_context', None))
             positions = copy.deepcopy(self.positions)
         now = int(time.time()*1000)
         if radar_only:
             # Startup radar skips message and AI scans, but the guard page still needs breaker, freshness and the lab.
             body = {'ok':True,'schema':1,'mode':'BASELINE' if self.live else 'SHADOW',
-                    'snapshot':result,
+                    'snapshot':result, 'decisionContext':evidence,
                     'runtimeHealthy':bool(self.heartbeat_ms and now-self.heartbeat_ms<=10000),
                     'feedHealthy':self.feed.is_alive() and bool(self.feed.heartbeat_ms and now-self.feed.heartbeat_ms<=10000)}
             body.update(self._guard_fields(now))
@@ -147,8 +161,14 @@ class Runtime:
             'healthy': self.observer.is_alive() and bool(getattr(self.observer, 'heartbeat', 0) and now - self.observer.heartbeat <= 10000),
             'error': getattr(self.observer, 'error', None),
         }
-        return {'observationMessages':observation_messages,'ok':True,'schema':1,'mode':'BASELINE' if self.live else 'SHADOW',
-                'snapshot':result,'runtimeHealthy':bool(self.heartbeat_ms and now-self.heartbeat_ms<=10000),
+        wave = getattr(self, 'wave', None)
+        if wave is not None:
+            wave.expire(now)
+        return {'observationMessages':observation_messages,
+                'waveResearch':{'mode':'RESEARCH_ONLY' if wave is not None else 'DISABLED','tradeEligible':False},
+                'waveMessages':wave.messages() if wave is not None else [],
+                'ok':True,'schema':1,'mode':'BASELINE' if self.live else 'SHADOW',
+                'snapshot':result,'decisionContext':evidence,'researchSummary':self._research_summary(now),'runtimeHealthy':bool(self.heartbeat_ms and now-self.heartbeat_ms<=10000),
                 'feedHealthy':self.feed.is_alive() and bool(self.feed.heartbeat_ms and now-self.feed.heartbeat_ms<=10000),
                 'notificationHealthy':self.worker.is_alive() and bool(self.worker.heartbeat_ms and now-self.worker.heartbeat_ms<=10000),
                 'observerHealthy': obs_health['healthy'],
@@ -160,20 +180,40 @@ class Runtime:
                 'aiFastHealthy':self.ai_fast_worker.is_alive() and 0 <= now-self.ai_fast_worker.heartbeat_ms <= 10000,
                 'aiFastError':self.ai_fast_worker.error,
                 'feedError':self.feed.error,'notificationError':self.worker.error,'outbox':self.store.health(),
-                'positions':positions,'positionNotifications':'DEVICE_PUSH_UNVERIFIED' if self.exit_enabled else 'SHADOW_EVENTS_ONLY',
+                'positions':positions,'accountRisk':self.account_context.report(positions,now) if hasattr(self,'account_context') else None,'positionNotifications':'DEVICE_PUSH_UNVERIFIED' if self.exit_enabled else 'SHADOW_EVENTS_ONLY',
                 'exitDelivery':self.exit_delivery.health(),'exitNotificationError':self.exit_worker.error,
                 'exitNotificationHealthy':self.exit_worker.is_alive() and bool(self.exit_worker.heartbeat_ms and now-self.exit_worker.heartbeat_ms<=10000),
                 'context':self.context_feed.health(now),
+                'capacity':self.capacity.status(now) if hasattr(self, 'capacity') else None,
+                'executionMirror':__import__('cryptog.execution_sync',fromlist=['health']).health(self.ledger) if self.ledger else None,
+                'funnel':__import__('cryptog.funnel',fromlist=['report']).report(self.ledger) if self.ledger else None,
+                'aiEffectiveness':__import__('cryptog.funnel',fromlist=['ai_effectiveness']).ai_effectiveness(self.ledger) if self.ledger else None,
+                'spotResearch':self.research_feed.status(now) if hasattr(self,'research_feed') else None,
+                'v2Review':{'configuration':__import__('cryptog.review_bridge',fromlist=['review_status']).review_status(self.ai),
+                            'last':getattr(self.worker,'review_status',{'state':'NOT_CALLED'})},
                 'derivatives':self.derivatives.health(now),
                 'shortHorizonV2':self.tracker.status(now),
+                'settlementQuality': None if self.ledger is None else self.ledger.label_quality(),
                 'evolution': None if self.evolution is None else self.evolution.status(now),
                 'continuity': None if self.continuity is None else self.continuity.status(now)}
+
+    def _research_summary(self, now):
+        from .ui_evidence import research_summary
+        cached = getattr(self, '_ui_research', None)
+        if cached and 0 <= now-cached['atMs'] < 30000:
+            return cached
+        try:
+            self._ui_research = research_summary(self.ledger, now)
+            return self._ui_research
+        except Exception:
+            return None
 
     def run(self):
         self.library.load_alerted_setups()
         self.api = self.library.start_model_library_server()
         self.feed.start(); self.worker.start(); self.exit_worker.start(); self.observer.start(); self.context_feed.start()
         self.derivatives.start()
+        self.research_feed.start()
         if hasattr(self, 'ai_worker'): self.ai_worker.start()
         self.ai_delivery_worker.start()
         self.ai_fast_worker.start()
@@ -183,9 +223,13 @@ class Runtime:
                 self.cache.changed.clear()
                 local_ms = int(time.time()*1000)
                 snapshot = self.cache.snapshot(local_ms)
+                from .input_contract import INPUT_CONTRACT
+                snapshot['inputContract'] = copy.deepcopy(INPUT_CONTRACT)
                 snapshot['context'] = self.context_feed.latest()
                 snapshot['derivatives'] = self.derivatives.latest()
                 snapshot['breaker'] = self.tracker.breaker(snapshot['atMs'])
+                if self.ledger is not None:
+                    snapshot['costSnapshot'] = self.ledger.working_cost(snapshot['atMs'])
                 if snapshot.get('healthy'):
                     self.tracker.step(snapshot['series'].get('1m', []), snapshot['series'].get('15m', []))
                     self.tracker.watch(snapshot['ticker'].get('bid_price'), snapshot['atMs'], snapshot.get('series'))
@@ -205,6 +249,16 @@ class Runtime:
                 self._p3(snapshot['atMs'])
                 if snapshot['atMs'] - self._housekeeping_ms >= HOUSEKEEPING_MS:
                     self._housekeeping_ms = snapshot['atMs']
+                    try:
+                        self.capacity.sample(snapshot['atMs'])
+                    except Exception as exc:
+                        self.library.logger.error('Capacity telemetry: %s', type(exc).__name__)
+                    if self.ledger is not None:
+                        from .execution_sync import reconcile
+                        with self.library.LIBRARY_LOCK:
+                            actions=copy.deepcopy(list(self.library.ACTION_EVENTS.values()))
+                        try: reconcile(self.ledger,actions)
+                        except Exception as exc: self.library.logger.error('Execution mirror: %s',type(exc).__name__)
                     self._p4(snapshot)
                     self._p5(snapshot['atMs'])
                 try:
@@ -218,6 +272,8 @@ class Runtime:
                     snapshot['ticker'].get('timestamp') if snapshot['healthy'] else None,
                     {k: snapshot['series'].get(k) for k in ('1m','15m','1h')} if snapshot.get('healthy') else None)
                 with self.lock:
+                    from .ui_evidence import decision_context
+                    self.presentation_context = decision_context(snapshot, decision)
                     self.latest = decision
                     self.positions = positions
                 self.heartbeat_ms = local_ms
@@ -239,12 +295,15 @@ class Runtime:
             self.api.shutdown()
             self.api.server_close()
             self.observer.join(10); self.feed.join(10); self.worker.join(10); self.exit_worker.join(10); self.context_feed.join(10)
+            if self.research_feed.ident: self.research_feed.join(10)
             if self.derivatives.ident: self.derivatives.join(10)
             if hasattr(self, 'ai_worker'): self.ai_worker.join(10)
             self.ai_delivery_worker.join(10)
             self.ai_fast_worker.join(10)
             if not any(w.is_alive() for w in (self.observer,self.worker,self.exit_worker,self.ai_worker,self.ai_delivery_worker,self.ai_fast_worker)):
                 self.store.close()
+                if getattr(self, 'wave', None) is not None:
+                    self.wave.close()
                 if self.ledger is not None:
                     self.ledger.close()
 
@@ -253,10 +312,15 @@ class Runtime:
         if self.ledger is None:
             return
         try:
+            from .funnel import record_decision
+            record_decision(self.ledger,decision,snapshot['atMs'])
             if signal is None:
                 signal = decision.get('signal')
             if signal and signal.get('rule_version') == 'short-horizon-v2':
                 self.ledger.record_candidate(signal)
+                if not decision.get('signal'):
+                    from .funnel import stage
+                    stage(self.ledger,signal['alert_id'],snapshot['atMs'],'SUPPRESSED',payload={'reasons':decision.get('reasons')})
             for item in (decision.get('shortHorizonV2') or {}).get('research') or []:
                 if item.get('module') == 'S5':
                     self.ledger.record_research(item)
@@ -279,7 +343,7 @@ class Runtime:
             module = source.get('module')
             policy = self.evolution.policy(module or '')
             if policy.get('stage') == 'SHADOW':
-                self.evolution.note(module, now)
+                self.evolution.note(module, now, source.get('alert_id'))
             current = decision.get('signal')
             if not current or current.get('rule_version') != 'short-horizon-v2':
                 return record

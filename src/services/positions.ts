@@ -9,9 +9,10 @@ export const exitLabels: Record<string,string> = {
 export interface ExitNotice { id:string; kind:string; quantity:number; atMs:number; }
 export interface PositionReport {
   positionId:string; status:string; remainingQuantity:number|null; atMs:number;
-  reason:string|null; deadlineMs?:number; unresolvedNotices:ExitNotice[];
+  reason:string|null; deadlineMs?:number; overdueUnclosed?:boolean; unresolvedNotices:ExitNotice[];
 }
-export interface PositionState { fresh:boolean; positions:PositionReport[]; pushEnabled:boolean; }
+export interface AccountRisk {source:string;updatedMs:number|null;fresh:boolean;coverageComplete:boolean;knownOpenPositions:number;totalPlannedRiskUsdt:number|null;singleTradeRiskBudgetUsdt:number|null;equityUsdt:number|null}
+export interface PositionState { accountRisk?:AccountRisk; fresh:boolean; positions:PositionReport[]; pushEnabled:boolean; }
 export function parsePositions(value:any, now=Date.now()):PositionState {
   if (value?.ok!==true || value.schema!==1 || !['SHADOW_EVENTS_ONLY','DEVICE_PUSH_UNVERIFIED'].includes(value.positionNotifications) || !Array.isArray(value.positions)) throw new Error('服务器尚未提供持仓退出监控');
   const positions = value.positions.map((p:any):PositionReport => {
@@ -23,13 +24,16 @@ export function parsePositions(value:any, now=Date.now()):PositionState {
       return {id:n.id,kind:n.kind,quantity:n.quantity,atMs:n.atMs};
     });
     return {positionId:p.positionId,status:p.status,remainingQuantity:p.remainingQuantity,atMs:p.atMs,
-      reason:typeof p.reason==='string'?p.reason:null,deadlineMs:Number.isFinite(p.deadlineMs)?p.deadlineMs:undefined,unresolvedNotices:notices};
+      overdueUnclosed:p.overdueUnclosed===true, reason:typeof p.reason==='string'?p.reason:null,deadlineMs:Number.isFinite(p.deadlineMs)?p.deadlineMs:undefined,unresolvedNotices:notices};
   });
+  const risk=value.accountRisk;
+  const riskValid=risk && risk.source==='MANUAL_UNVERIFIED' && typeof risk.fresh==='boolean' && typeof risk.coverageComplete==='boolean' && Number.isInteger(risk.knownOpenPositions) && risk.knownOpenPositions>=0 && ['totalPlannedRiskUsdt','singleTradeRiskBudgetUsdt','equityUsdt'].every(k=>risk[k]===null || (Number.isFinite(risk[k]) && risk[k]>=0));
+  const accountRisk=riskValid?{...risk,fresh:risk.fresh && Number.isFinite(risk.updatedMs) && now-risk.updatedMs>=0 && now-risk.updatedMs<=900000}:undefined;
   return {fresh:value.runtimeHealthy===true && Number.isFinite(value.snapshot?.atMs) && now-value.snapshot.atMs<=10000 && now-value.snapshot.atMs>=-5000
-    && positions.every((p:PositionReport)=>now-p.atMs<=10000 && now-p.atMs>=-5000),positions,pushEnabled:value.positionNotifications==='DEVICE_PUSH_UNVERIFIED'};
+    && positions.every((p:PositionReport)=>now-p.atMs<=10000 && now-p.atMs>=-5000),positions,accountRisk,pushEnabled:value.positionNotifications==='DEVICE_PUSH_UNVERIFIED'};
 }
 async function request(path:string, body?:object) {
-  const {url,token}=connection(); const controller=new AbortController();
+  const target=connection(); const {url,token}=target; const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),5000);
   try {
     const response=await fetch(`${url}/model-library/${path}`,{method:body?'POST':'GET',
@@ -37,6 +41,7 @@ async function request(path:string, body?:object) {
       signal:controller.signal,cache:'no-store'});
     const data=await response.json();
     if (!response.ok || data.ok!==true) throw new Error('服务器未确认，请刷新状态后重试');
+    if(target.cacheScope!==connection().cacheScope)throw new Error('连接已切换，请重新读取当前账户');
     return data;
   } finally { clearTimeout(timer); }
 }
@@ -46,3 +51,5 @@ export async function reviewNotice(noticeId:string) {
   if (receipt.noticeId!==noticeId || receipt.kind!=='USER_REVIEWED' || !Number.isFinite(receipt.serverReceivedAtMs)) throw new Error('确认响应不完整，请重试');
   return receipt.serverReceivedAtMs as number;
 }
+
+export async function saveAccountContext(equityUsdt:number,allPositionsRecorded:boolean) { return request("account-context",{equityUsdt,allPositionsRecorded}); }

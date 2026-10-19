@@ -1,0 +1,15 @@
+{
+  "trialId": "delay120-122d",
+  "manifestSha256": "35a4c283444dfebbfcad178b077408e9097a84d11847d09c6a784871ff7f142d",
+  "config": {
+    "db": "data/stage-d-diagnostic.sqlite3",
+    "out": "model_library/stage-d/D-20261018-002/trials",
+    "trial_id": "delay120-122d",
+    "manifest_sha256": "35a4c283444dfebbfcad178b077408e9097a84d11847d09c6a784871ff7f142d",
+    "days": 122,
+    "friction": 0.24,
+    "delay_ms": 120000
+  },
+  "startedMs": 1792299402989,
+  "status": "REGISTERED"
+}

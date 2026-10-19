@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from cryptog.config import V2_L1_MIN_SAMPLES, V2_S1_MIN_DROP_PCT, V2_SHADOW_MS, V2_TRIAL_MS
 from cryptog.evolution import (
@@ -23,6 +24,11 @@ def signal(module="S1"):
 
 
 class EvolutionTests(unittest.TestCase):
+    def reviewed_tick(self, module, now):
+        # State-machine test only; the evidence gate is tested separately below.
+        with patch('cryptog.evolution.stage_review', return_value={'passes': True, 'gaps': []}):
+            return self.pipe.tick(module, now)
+
     def setUp(self):
         handle, self.path = tempfile.mkstemp(suffix=".sqlite3")
         os.close(handle)
@@ -52,10 +58,10 @@ class EvolutionTests(unittest.TestCase):
         self.assertEqual(watch["tier_label"], "观察级·影子验证")
         self.assertTrue(watch["strategy_name_zh"].startswith("【观察级·影子验证】"))
         self.assertEqual(self.ledger.counts()["promotions"], 0)
-        self.pipe.note("S1", T0 + DAY)
+        self.pipe.note("S1", T0 + DAY, 'candidate-1')
         self.assertEqual(self.pipe.tick("S1", T0 + 13 * DAY)["stage"], "SHADOW")
         self.assertEqual(self.ledger.counts()["promotions"], 0)
-        done = self.pipe.tick("S1", T0 + V2_SHADOW_MS)
+        done = self.reviewed_tick("S1", T0 + V2_SHADOW_MS)
         self.assertEqual(done["action"], "SHADOW_COMPLETE")
         self.assertEqual(self.ledger.promotions()[0]["action"], "SHADOW_COMPLETE")
         trial = self.pipe.policy("S1")
@@ -65,7 +71,7 @@ class EvolutionTests(unittest.TestCase):
         self.assertIsNone(reason)
         self.assertEqual(stamped["tier_label"], "试运行")
         self.assertTrue(stamped["strategy_name_zh"].startswith("【试运行】"))
-        live = self.pipe.tick("S1", T0 + V2_SHADOW_MS + V2_TRIAL_MS)
+        live = self.reviewed_tick("S1", T0 + V2_SHADOW_MS + V2_TRIAL_MS)
         self.assertEqual(live["action"], "TRIAL_COMPLETE")
         self.assertEqual(self.pipe.policy("S1")["tierLabel"], "交易级")
         paused, pause_reason = apply_release(signal(), self.pipe.policy("S1"), True)
@@ -85,20 +91,20 @@ class EvolutionTests(unittest.TestCase):
 
     def test_rollback_on_expectancy_and_drawdown_and_not_during_shadow(self):
         self.pipe.consider("S4", GOOD, T0, pbo_value=0.10)
-        self.pipe.note("S4", T0)
+        self.pipe.note("S4", T0, 'candidate-4')
         held = self.pipe.tick("S4", T0 + DAY, trades=[{"netPct": -1, "r": -7}])
         self.assertEqual(held["stage"], "SHADOW")
         self.assertNotIn("action", held)
         self.assertEqual(self.ledger.counts()["promotions"], 0)
-        self.pipe.tick("S4", T0 + V2_SHADOW_MS)
+        self.reviewed_tick("S4", T0 + V2_SHADOW_MS)
         losing = [{"netPct": -0.2, "r": -0.1} for _ in range(30)]
         rolled = self.pipe.tick("S4", T0 + V2_SHADOW_MS + DAY, trades=losing)
         self.assertEqual(rolled["action"], "ROLLBACK")
         self.assertEqual(rolled["reason"], "最近 30 笔期望值小于 0")
         self.assertEqual(self.pipe.policy("S4")["tierLabel"], "观察级·未验证")
         self.pipe.consider("S2", GOOD, T0, pbo_value=0.10)
-        self.pipe.note("S2", T0)
-        self.pipe.tick("S2", T0 + V2_SHADOW_MS)
+        self.pipe.note("S2", T0, 'candidate-2')
+        self.reviewed_tick("S2", T0 + V2_SHADOW_MS)
         deep = self.pipe.tick("S2", T0 + V2_SHADOW_MS + DAY, trades=[{"netPct": -1, "r": -2}] * 4)
         self.assertEqual(deep["reason"], "回撤超过 6R")
         self.assertGreater(drawdown_r([-2, -2, -2, -1]), 6)

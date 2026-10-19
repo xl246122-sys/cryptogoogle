@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {netPlan} from '../src/services/tradePresentation';
+import {migrateCredential} from '../src/services/credentialMigration';
+import {readDecisionContext} from '../src/services/marketState';
+import {ResearchEvidence} from '../src/components/ResearchEvidence';
+import {ClosedContextCard} from '../src/components/ClosedContextCard';
+import {SystemGuardView} from '../src/components/views/SystemGuardView';
+const signal:any={entryPrice:99,entryMax:100,targetTP1:101,targetTP2:102,stopLoss:99.5,tradeRules:{ruleVersion:'short-horizon-v2',tp1Fraction:.5,frictionPct:.24}};
+test('split net uses worst entry and working cost; 0.8 target is not gross TP1',()=>{
+ const p=netPlan(signal,500)!;
+ assert.ok(Math.abs(p.wholeTp2-1.26)<1e-10);assert.ok(Math.abs(p.wholeBreakeven-.38)<1e-10);
+ assert.ok(Math.abs(p.requiredRemainderPrice-101.08)<1e-10);assert.equal(p.stopUsdt,3.7000000000000024);
+ const high=netPlan({...signal,tradeRules:{...signal.tradeRules,frictionPct:.6}},500)!;
+ assert.ok(high.wholeTp2<p.wholeTp2);
+ assert.equal(netPlan({...signal,entryMax:undefined},500),null);
+ assert.equal(netPlan({...signal,tradeRules:{...signal.tradeRules,frictionPct:.11}},500),null);
+ assert.equal(netPlan({...signal,tradeRules:{...signal.tradeRules,ruleVersion:'short-horizon-v1'}},500),null);
+});
+test('migration removes plaintext only after successful persisted verification and preserves scope',async()=>{
+ let legacy='{"cacheScope":"same","token":"fixture"}',saved:string|undefined;
+ const storage={getItem:()=>legacy,removeItem:()=>{legacy='';}};
+ const vault={get:async()=>({value:saved}),set:async({value}:{value:string})=>{saved=value;},clear:async()=>{saved=undefined;}};
+ const result=await migrateCredential(storage,'key',vault,v=>JSON.stringify(JSON.parse(v)));
+ assert.equal(JSON.parse(result!).cacheScope,'same');assert.equal(legacy,'');assert.equal(saved,result);
+ legacy='keep';saved=undefined;vault.set=async()=>{};
+ await assert.rejects(migrateCredential(storage,'key',vault,v=>v));assert.equal(legacy,'keep');
+ vault.get=async()=>{throw Error('locked');};await assert.rejects(migrateCredential(storage,'key',vault,v=>v));assert.equal(legacy,'keep');
+});
+test('closed context rejects future bars and mismatched snapshots; unknown evidence remains unknown',()=>{
+ const raw={atMs:1000,frames:Object.fromEntries(['d1','h4','h1'].map(k=>[k,{closeTime:999,state:'UP'}])),gates:{S1:true,S2:false,S3:false,S4:false}};
+ assert.ok(readDecisionContext(raw,1000));assert.equal(readDecisionContext(raw,1001),undefined);
+ assert.equal(readDecisionContext({...raw,frames:{...raw.frames,d1:{closeTime:1000,state:'UP'}}},1000),undefined);
+ const html=renderToStaticMarkup(<ResearchEvidence data={null}/>);assert.ok(html.includes('未知'));assert.ok(html.includes('暂无完整分组'));
+ const cache=renderToStaticMarkup(<ClosedContextCard market={{stateSource:'CACHE',decisionContext:readDecisionContext(raw,1000)} as any}/>);
+ assert.ok(cache.includes('历史缓存'));assert.ok(cache.includes('当前准入状态待同步'));
+ const guard=renderToStaticMarkup(<SystemGuardView config={{activeStrategies:{}} as any} macroTrend={{stateSource:'UNAVAILABLE',dataReady:false} as any} onUpdateConfig={()=>{}} onRequestNotificationPermission={()=>{}} hasNotificationPermission={false}/>);
+ assert.ok(guard.includes('云端状态待核验'));assert.ok(!guard.includes('守护中'));assert.ok(!guard.includes('已启用'));
+});

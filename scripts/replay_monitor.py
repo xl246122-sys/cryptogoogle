@@ -14,7 +14,7 @@ def replay(database):
     db=sqlite3.connect(uri,uri=True)
     results=[]
     for (raw,) in db.execute("SELECT payload FROM events WHERE kind='EVALUATION' ORDER BY at_ms,id"):
-        event=decode_event(raw)
+        event=decode_event(raw, db)
         actual=evaluate(event['input'])
         results.append({'atMs':event['input']['atMs'],'equal':canonical(actual)==canonical(event['decision']),
                         'inputSha256':hashlib.sha256(canonical(event['input']).encode()).hexdigest(),

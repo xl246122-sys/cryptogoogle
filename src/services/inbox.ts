@@ -1,4 +1,5 @@
 import { connection } from './serverConnection';
+import {parseWaveMessage,waveTitle,waveBody} from './waveState';
 
 export interface InboxMessage {
   id: string;
@@ -8,6 +9,7 @@ export interface InboxMessage {
   category: string;
   read: boolean;
   extra?: any;
+  revisions?: any[];
 }
 
 const KEY = 'cryptog_inbox_v1';
@@ -15,27 +17,32 @@ const PENDING_FOCUS_KEY = 'cryptog_pending_focus_id';
 const CLEAR_KEY = 'cryptog_inbox_cleared_at';
 const CYCLE_KEY = 'cryptog_inbox_cycle_start';
 const DELETED_KEY = 'cryptog_inbox_deleted_ids';
-const CLEAR_INTERVAL = 3 * 60 * 60 * 1000;
+function protectedMessage(m:InboxMessage,now=Date.now()) {
+  return m.extra?.eventType==='WAVE_STATE_RESEARCH'||m.extra?.eventType==='POSITION_EXIT_NOTICE'
+    ||(m.extra?.signalType==='BUY'&&Number(m.extra.expiresAt)>now);
+}
 
 export function clearAllMessages(now = Date.now()) {
   const old = JSON.parse(localStorage.getItem(KEY) || '[]') as InboxMessage[];
   const ids = new Set<string>(JSON.parse(localStorage.getItem(DELETED_KEY) || '[]'));
-  old.forEach(m => ids.add(m.id));
+  const kept=old.filter(m=>protectedMessage(m,now));
+  old.filter(m=>!protectedMessage(m,now)).forEach(m => ids.add(m.id));
   localStorage.setItem(DELETED_KEY, JSON.stringify([...ids]));
   localStorage.setItem(CLEAR_KEY, String(now));
   localStorage.setItem(CYCLE_KEY, String(now));
   localStorage.removeItem(PENDING_FOCUS_KEY);
-  save([]);
-  if (typeof window !== 'undefined') window.dispatchEvent(new Event('cryptog-inbox-cleared'));
+  save(kept);
+  if (typeof window !== 'undefined' && kept.length===0) window.dispatchEvent(new Event('cryptog-inbox-cleared'));
 }
 
 export function autoClearMessages(now = Date.now()) {
-  const start = Number(localStorage.getItem(CYCLE_KEY));
-  if (!start) localStorage.setItem(CYCLE_KEY, String(now));
-  else if (now - start >= CLEAR_INTERVAL) clearAllMessages(now);
+  // Kept as a compatibility hook for existing callers. No time-based deletion:
+  // read history and still-valid plans must survive old three-hour cycles.
 }
 
 export function normalizedCategory(category: string, title='', extra: any={}): string {
+  if(parseWaveMessage(extra))return '四阶段研究';
+  if (extra?.eventType==='DIAGNOSTIC_TEST') return '推送测试';
   if (/测试|摘要/.test(title) || ['测试','观察','摘要'].includes(category)) return '';
   if (['AI','AI买入预警'].includes(category)) return 'AI买入预警';
   if (['阶段预警','接近','准备入场'].includes(category)) return '准备入场';
@@ -47,7 +54,10 @@ export function normalizedCategory(category: string, title='', extra: any={}): s
 export function messages(): InboxMessage[] {
   try {
     autoClearMessages();
-    return (JSON.parse(localStorage.getItem(KEY) || '[]') as InboxMessage[]).map(m => ({...m, category: normalizedCategory(m.category,m.title,m.extra)})).filter(m => !!m.category);
+    return (JSON.parse(localStorage.getItem(KEY) || '[]') as InboxMessage[]).map(m => {
+      const category=normalizedCategory(m.category,m.title,m.extra);
+      return {...m,category,...(category==='AI买入预警'?{title:'历史 AI 路径 · 已停用',body:'旧版 AI 来源记录，仅供回看，不是当前买入候选。请以云端 short-horizon-v2 计划及有效期为准。'}:{})};
+    }).filter(m => !!m.category);
   } catch {
     return [];
   }
@@ -62,6 +72,15 @@ function save(rows: InboxMessage[]) {
 
 export function ingestMessage(data: any) {
   if (!data) return;
+  if(data.eventType==='WAVE_STATE_RESEARCH') {
+    const wave=parseWaveMessage(data);if(!wave)return;
+    const rows=messages();const index=rows.findIndex(r=>r.id===wave.eventId);const old=rows[index];
+    if(old && (!parseWaveMessage(old.extra)||wave.revision<=Number(old.extra.revision)||wave.decisionTime<Number(old.extra.decisionTime)))return;
+    const item:InboxMessage={id:wave.eventId,title:waveTitle(wave),body:waveBody(wave),at:wave.issuedAtMs,
+      category:'四阶段研究',read:false,extra:wave,revisions:old?[...(old.revisions||[]),old.extra]:[]};
+    if(index>=0)rows[index]=item;else rows.push(item);
+    save(rows.sort((a,b)=>b.at-a.at));return;
+  }
   const id =
     data.eventId ||
     data.id ||
@@ -171,10 +190,11 @@ export function markAllAsRead() {
 }
 
 export function clearReadMessages() {
-  save(messages().filter((m) => !m.read));
+  save(messages().filter((m) => !m.read||protectedMessage(m)));
 }
 
 export function deleteMessage(id: string) {
+  if(messages().some(m=>m.id===id&&protectedMessage(m)))return;
   const ids = new Set<string>(JSON.parse(localStorage.getItem(DELETED_KEY) || '[]'));
   ids.add(id);
   localStorage.setItem(DELETED_KEY,JSON.stringify([...ids]));
@@ -206,7 +226,7 @@ export function setNoiseShieldEnabled(enabled: boolean) {
 }
 
 export function clearNoiseMessages() {
-  save(messages().filter((m) => !isNoiseCategory(m.category, m.title)));
+  save(messages().filter((m) => protectedMessage(m)||!isNoiseCategory(m.category, m.title)));
 }
 
 export function markNoiseAsRead() {
@@ -223,6 +243,7 @@ export function focusMessage(id: string) {
 export function getAndClearPendingFocus(): string | null {
   if (typeof window === 'undefined') return null;
   const id = localStorage.getItem(PENDING_FOCUS_KEY);
+  if(id&&!messages().some(m=>m.id===id))return null;
   if (id) {
     localStorage.removeItem(PENDING_FOCUS_KEY);
   }
@@ -239,9 +260,12 @@ export async function syncInbox() {
     });
     if (!response.ok) return;
     const value = await response.json();
+    if(c.cacheScope!==connection().cacheScope)return;
     for (const m of value.observationMessages || []) {
       ingestMessage(m);
     }
+    if(value.waveResearch?.mode==='RESEARCH_ONLY'&&value.waveResearch.tradeEligible===false)
+      for(const m of value.waveMessages||[])ingestMessage(m);
   } catch {
     /* Offline messages remain stored. */
   }

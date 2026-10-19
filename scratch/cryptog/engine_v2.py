@@ -18,7 +18,7 @@ from .config import (
     V2_STOP_MAX_PCT, V2_STOP_MIN_PCT, V2_TIER_LABEL, V2_TIER_WATCH, V2_TIME_STOP_MINUTES,
     V2_TIME_STOP_PROGRESS_R, V2_TP1_FRACTION,
 )
-from .cost_model import position_fraction_pct
+from .cost_model import position_fraction_pct, cost_snapshot
 from .derivatives import score_confirmation, tag_text
 from .indicators import atr, boll, ema, frame, rsi_series
 
@@ -104,10 +104,11 @@ def trend_state(price: float, f: dict) -> str:
     return "ABOVE_99" if price >= e99 else "BELOW_99"
 
 
-def environment(ctx: dict, price: float, at_ms: int) -> dict:
-    states = {tf: trend_state(price, ctx[tf]) for tf in WEIGHTS}
+def environment(ctx: dict, price: float, at_ms: int, live_display: bool = False) -> dict:
+    closed_states = {tf: trend_state(ctx[tf]['close'], ctx[tf]) for tf in WEIGHTS}
+    states = {tf: trend_state(price, ctx[tf]) for tf in WEIGHTS} if live_display else closed_states
     score = round(100 * sum(WEIGHTS[tf] * STATE_SCORE[s] for tf, s in states.items()))
-    h4_above = price > ctx["h4"]["ema99"]
+    h4_above = ctx['h4']['close'] > ctx["h4"]["ema99"]
     hour = datetime.fromtimestamp(at_ms / 1000, timezone.utc).hour
     daily_bull = ctx["d1"]["close"] > ctx["d1"]["ema99"]
     # 4H 未破位: the 4H close is still above the daily EMA99, the last line of the daily bull.
@@ -116,8 +117,8 @@ def environment(ctx: dict, price: float, at_ms: int) -> dict:
     gates = {
         "S1": True,
         "S2": daily_bull and h4_intact,
-        "S3": h4_above and states["h4"] == "UP" and states["h1"] == "UP",
-        "S4": h4_above and states["h4"] != "DOWN" and V2_S4_SESSION_START_UTC <= hour < V2_S4_SESSION_END_UTC,
+        "S3": h4_above and closed_states["h4"] == "UP" and closed_states["h1"] == "UP",
+        "S4": h4_above and closed_states["h4"] != "DOWN" and V2_S4_SESSION_START_UTC <= hour < V2_S4_SESSION_END_UTC,
     }
     closed = []
     if not h4_above:
@@ -371,11 +372,11 @@ def detect_s5(m15: List[dict], baseline: Optional[float] = None) -> Optional[dic
     }
 
 
-def _metrics(price: float, stop: float, tp1: float) -> dict:
+def _metrics(price: float, stop: float, tp1: float, friction: float = V2_FRICTION_PCT) -> dict:
     risk = (1 - stop / price) * 100
     gross = (tp1 / price - 1) * 100
-    net = gross - V2_FRICTION_PCT
-    return {"risk": risk, "gross": gross, "net": net, "rr": net / (risk + V2_FRICTION_PCT) if risk > 0 else -1}
+    net = gross - friction
+    return {"risk": risk, "gross": gross, "net": net, "rr": net / (risk + friction) if risk > 0 else -1}
 
 
 def widen_stop(setup: dict) -> dict:
@@ -392,13 +393,14 @@ def plan_issue(setup: dict) -> Optional[str]:
     low, high = setup["entry_min"], setup["entry_max"]
     if not stop < setup["invalidation"] < low < high < tp1:
         return "价格顺序无效：止损 < 失效位 < 挂单区间 < TP1 不成立"
-    near, far = _metrics(low, stop, tp1), _metrics(high, stop, tp1)
+    friction = (setup.get("cost_snapshot") or cost_snapshot(0))["frictionPct"]
+    near, far = _metrics(low, stop, tp1, friction), _metrics(high, stop, tp1, friction)
     if near["risk"] < V2_STOP_MIN_PCT - 1e-9:
         return f"止损距离 {near['risk']:.2f}% 小于 {V2_STOP_MIN_PCT:.2f}%"
     if far["risk"] > V2_STOP_MAX_PCT + 1e-9:
         return f"止损距离 {far['risk']:.2f}% 大于 {V2_STOP_MAX_PCT:.2f}%"
     if far["net"] < V2_MIN_NET_TP1 - 1e-9:
-        return f"扣 {V2_FRICTION_PCT:.2f}% 成本后 TP1 净 {far['net']:.2f}% 不足 {V2_MIN_NET_TP1:.2f}%"
+        return f"扣 {friction:.2f}% 成本后 TP1 净 {far['net']:.2f}% 不足 {V2_MIN_NET_TP1:.2f}%"
     if far["rr"] < V2_MIN_NET_RR - 1e-9:
         return f"净盈亏比 {far['rr']:.2f} 不足 {V2_MIN_NET_RR:.2f}"
     return None
@@ -431,14 +433,16 @@ def path_issue(setup: dict, path: List[dict], now_ms: int) -> Optional[str]:
 def build_signal(setup: dict, ctx: dict, env: dict, ask: float, now_ms: int, book: dict,
                  derivatives: Optional[dict] = None) -> dict:
     meta = MODULES[setup["module"]]
-    m = _metrics(ask, setup["stop"], setup["tp1"])
+    cost = setup.get("cost_snapshot") or cost_snapshot(now_ms)
+    friction = cost["frictionPct"]
+    m = _metrics(ask, setup["stop"], setup["tp1"], friction)
     tp2 = _tp2(setup, ctx)
     trigger = setup["trigger"]
     confirmation = int(trigger["close_time"])
     expires = confirmation + meta["valid_ms"]
     key = f"BTCUSDT_{setup['module']}_{setup['anchor_time']}"
-    size_pct = position_fraction_pct(m["risk"])
-    breakeven = ask * (1 + V2_FRICTION_PCT / 100)
+    size_pct = position_fraction_pct(m["risk"], friction)
+    breakeven = ask * (1 + friction / 100)
     scored = score_confirmation(derivatives)
     deriv_note = f"衍生品加分：{tag_text(scored['tags'])}。" if scored["tags"] else ""
     name = f"BTC {meta['name']}"
@@ -446,7 +450,7 @@ def build_signal(setup: dict, ctx: dict, env: dict, ask: float, now_ms: int, boo
     widened = "，结构止损过近已放宽到最小距离" if "structural_stop" in setup else ""
     reason = (f"{setup['reason']}。环境：{env['label']}。挂单 {_fmt(setup['entry_min'])}–{_fmt(setup['entry_max'])}，"
               f"止损 {_fmt(setup['stop'])}（-{m['risk']:.2f}%{widened}），TP1 {_fmt(setup['tp1'])} 卖 50% 后止损移到保本，"
-              f"余仓跟踪 15m EMA20 或 TP2 {_fmt(tp2)}。扣 {V2_FRICTION_PCT:.2f}% 成本后 TP1 净 {m['net']:.2f}%，"
+              f"余仓跟踪 15m EMA20 或 TP2 {_fmt(tp2)}。扣 {friction:.2f}% 成本后 TP1 净 {m['net']:.2f}%，"
               f"净盈亏比 {m['rr']:.2f}。{V2_TIME_STOP_MINUTES} 分钟未到 +{V2_TIME_STOP_PROGRESS_R}R 离场，最长 {V2_MAX_HOLD_MINUTES // 60} 小时。"
               f"按账户 {V2_RISK_PER_TRADE_PCT}% 风险，建议仓位约为账户的 {size_pct:.0f}%。有效至 {until}。{deriv_note}{V2_TIER_LABEL}，历史胜率未验证。")
     env_score = max(0, min(40, 20 + env["score"] // 5))
@@ -467,19 +471,20 @@ def build_signal(setup: dict, ctx: dict, env: dict, ask: float, now_ms: int, boo
         "strategy": meta["strategy"], "model": meta["model"], "rule_version": V2_RULE_VERSION,
         "module": setup["module"], "tier": V2_TIER_WATCH, "tier_label": V2_TIER_LABEL,
         "max_hold_minutes": V2_MAX_HOLD_MINUTES, "min_net_tp1": V2_MIN_NET_TP1, "min_net_rr": V2_MIN_NET_RR,
-        "friction_pct": V2_FRICTION_PCT, "max_net_target": None,
+        "cost_snapshot": cost, "friction_pct": friction, "max_net_target": None,
         "invalidation_price": round(setup["invalidation"], 2), "tp1_fraction": V2_TP1_FRACTION,
         "target_basis": f"TP1：{setup['tp1_basis']}；TP2：下一结构阻力，余仓跟踪 15m EMA20",
-        "exit_rule": (f"跌破止损全部离场；TP1 卖出 50%，止损移到保本（含 {V2_FRICTION_PCT:.2f}% 成本）；余仓在 15m 收盘跌破 EMA20 或到 TP2 离场；"
+        "exit_rule": (f"跌破止损全部离场；TP1 卖出 50%，止损移到保本（含 {friction:.2f}% 成本）；余仓在 15m 收盘跌破 EMA20 或到 TP2 离场；"
                       f"{V2_TIME_STOP_MINUTES} 分钟未到 +{V2_TIME_STOP_PROGRESS_R}R 时间止损；持有满 {V2_MAX_HOLD_MINUTES} 分钟离场。"),
         "strategy_name_zh": f"【{V2_TIER_LABEL}】{name}", "entry_price": ask,
         "target_tp1": setup["tp1"], "target_tp2": tp2, "stop_loss": setup["stop"],
         "profit_pct1": round(m["gross"], 4), "profit_pct2": round((tp2 / ask - 1) * 100, 4),
         "stop_loss_pct": round(m["risk"], 4), "net_tp1": round(m["net"], 4),
-        "net_tp2": round((tp2 / ask - 1) * 100 - V2_FRICTION_PCT, 4), "net_rr": round(m["rr"], 4),
+        "net_tp2": round((tp2 / ask - 1) * 100 - friction, 4), "net_rr": round(m["rr"], 4),
         "risk_reward": round(m["gross"] / m["risk"], 2) if m["risk"] > 0 else 0,
         "time_horizon": f"5 分钟–{V2_MAX_HOLD_MINUTES // 60} 小时；{V2_TIME_STOP_MINUTES} 分钟时间止损",
-        "rule_score": env_score + rr_score + trigger_score + deriv_score,
+        "rule_score": min(100, env_score + rr_score + trigger_score + deriv_score),
+        "raw_rule_score": env_score + rr_score + trigger_score + deriv_score,
         "rule_score_breakdown": f"环境{env_score}+净盈亏比{rr_score}+形态{trigger_score}+衍生品{deriv_score}",
         "win_rate_status": "历史胜率：未验证", "reason_zh": reason,
         "structure_support": setup["stop"], "structure_key": key, "alert_id": key,
@@ -502,6 +507,10 @@ def context_issue(ctx: Optional[dict], now_ms: int) -> Optional[str]:
         return "1D/4H/1H 环境数据尚未就绪"
     if not 0 <= now_ms - int(ctx["atMs"]) <= V2_CONTEXT_MAX_AGE_MS:
         return "1D/4H/1H 环境数据过期"
+    for tf, span in (('d1', 24 * H1), ('h4', 4 * H1), ('h1', H1)):
+        end = (ctx.get(tf) or {}).get('close_time')
+        if not isinstance(end, (int, float)) or not math.isfinite(end) or not 0 < now_ms - end <= span + V2_CONTEXT_MAX_AGE_MS:
+            return f"{tf} 环境 K 线未收盘或滞后"
     if now_ms - int(ctx["h1"]["close_time"]) > 2 * H1 + 60_000:
         return "1H 已收盘 K 线滞后"
     return None
@@ -525,7 +534,7 @@ def flush_monitor(m5: List[dict]) -> dict:
 
 def scan(m15: List[dict], m5: List[dict], path: List[dict], ask: float, book: dict,
          ctx: Optional[dict], now_ms: int, breaker: Optional[dict] = None,
-         derivatives: Optional[dict] = None) -> Tuple[Optional[dict], List[str], dict]:
+         derivatives: Optional[dict] = None, cost: Optional[dict] = None) -> Tuple[Optional[dict], List[str], dict]:
     """Returns (signal, reasons, view). A signal needs a fresh setup and the ask inside its band."""
     issue = context_issue(ctx, now_ms)
     if issue:
@@ -545,7 +554,7 @@ def scan(m15: List[dict], m5: List[dict], path: List[dict], ask: float, book: di
         if found:
             research.append(found)
             break
-    live_env = environment(ctx, ask, now_ms)
+    live_env = environment(ctx, ask, now_ms, live_display=True)
     view = {"env": env, "displayEnv": {"states": live_env["states"], "score": live_env["score"], "label": live_env["label"]},
             "candidates": [], "research": research, "flushMonitor": flush_monitor(m5),
             "derivatives": scored, "levels": [
@@ -579,6 +588,7 @@ def scan(m15: List[dict], m5: List[dict], path: List[dict], ask: float, book: di
             if bars5 and now_ms - int(bars5[-1]["close_time"]) <= 2 * M5:
                 bars15 = [b for b in m15 if b["close_time"] <= bars5[-1]["close_time"]]
                 attempts.append(("S3", detect_s3(bars5, bars15, ctx, env)))
+    selected = None
     for module, setup in attempts:
         if not setup:
             continue
@@ -587,18 +597,22 @@ def scan(m15: List[dict], m5: List[dict], path: List[dict], ask: float, book: di
             reasons.append(f"{module} {name}：{setup['blocked']}")
             view["candidates"].append({"module": module, "name": name, "issue": setup["blocked"]})
             continue
-        setup = widen_stop(setup)
+        setup = dict(widen_stop(setup), cost_snapshot=cost_snapshot(now_ms, cost))
         problem = plan_issue(setup) or path_issue(setup, path, now_ms)
+        if not problem and now_ms >= int(setup["trigger"]["close_time"])+MODULES[module]["valid_ms"]:
+            problem = "候选过期"
         if not problem and not setup["entry_min"] <= ask <= setup["entry_max"]:
             problem = f"当前卖一价 {_fmt(ask)} 不在挂单区间 {_fmt(setup['entry_min'])}–{_fmt(setup['entry_max'])}"
         view["candidates"].append({"module": module, "name": name, "issue": problem,
                                    "entryMin": setup["entry_min"], "entryMax": setup["entry_max"],
                                    "stop": setup["stop"], "tp1": setup["tp1"],
+                                   "candidateId": f"BTCUSDT_{module}_{setup['anchor_time']}",
                                    "confirmationTime": int(setup["trigger"]["close_time"])})
         if problem:
             reasons.append(f"{module} {name}：{problem}")
             continue
-        return build_signal(setup, ctx, env, ask, now_ms, book, derivatives), reasons, view
+        if selected is None:
+            selected = build_signal(setup, ctx, env, ask, now_ms, book, derivatives)
     if not view["candidates"]:
         reasons.append("最近两根 15m 没有满足 S1/S2 形态")
-    return None, reasons, view
+    return selected, reasons, view

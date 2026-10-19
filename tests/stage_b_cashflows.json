@@ -1,0 +1,140 @@
+[
+  {
+    "name": "half_net_point_eight_half_flat",
+    "fills": [
+      {
+        "fillId": "1",
+        "positionId": "shared",
+        "side": "BUY",
+        "price": 100,
+        "quantity": 1,
+        "executedAtMs": 1700000000001,
+        "commission": 0,
+        "commissionAsset": "USDT",
+        "commissionAssetUsdtRate": null,
+        "referencePrice": 100.0,
+        "referenceAtMs": 1699999999999,
+        "timeApproximate": false,
+        "source": "MANUAL"
+      },
+      {
+        "fillId": "2",
+        "positionId": "shared",
+        "side": "SELL",
+        "price": 100.8,
+        "quantity": 0.5,
+        "executedAtMs": 1700000000002,
+        "commission": 0,
+        "commissionAsset": "USDT",
+        "commissionAssetUsdtRate": null,
+        "referencePrice": 100.0,
+        "referenceAtMs": 1699999999999,
+        "timeApproximate": false,
+        "source": "MANUAL"
+      },
+      {
+        "fillId": "3",
+        "positionId": "shared",
+        "side": "SELL",
+        "price": 100,
+        "quantity": 0.5,
+        "executedAtMs": 1700000000003,
+        "commission": 0,
+        "commissionAsset": "USDT",
+        "commissionAssetUsdtRate": null,
+        "referencePrice": 100.0,
+        "referenceAtMs": 1699999999999,
+        "timeApproximate": false,
+        "source": "MANUAL"
+      }
+    ],
+    "expectedPct": 0.4
+  },
+  {
+    "name": "actual_fees_no_extra_slippage",
+    "fills": [
+      {
+        "fillId": "1",
+        "positionId": "shared",
+        "side": "BUY",
+        "price": 100,
+        "quantity": 1,
+        "executedAtMs": 1700000000001,
+        "commission": 0.1,
+        "commissionAsset": "USDT",
+        "commissionAssetUsdtRate": null,
+        "referencePrice": 100.0,
+        "referenceAtMs": 1699999999999,
+        "timeApproximate": false,
+        "source": "MANUAL"
+      },
+      {
+        "fillId": "2",
+        "positionId": "shared",
+        "side": "SELL",
+        "price": 101,
+        "quantity": 0.4,
+        "executedAtMs": 1700000000002,
+        "commission": 0.0404,
+        "commissionAsset": "USDT",
+        "commissionAssetUsdtRate": null,
+        "referencePrice": 100.0,
+        "referenceAtMs": 1699999999999,
+        "timeApproximate": false,
+        "source": "MANUAL"
+      },
+      {
+        "fillId": "3",
+        "positionId": "shared",
+        "side": "SELL",
+        "price": 102,
+        "quantity": 0.6,
+        "executedAtMs": 1700000000003,
+        "commission": 0.0612,
+        "commissionAsset": "USDT",
+        "commissionAssetUsdtRate": null,
+        "referencePrice": 100.0,
+        "referenceAtMs": 1699999999999,
+        "timeApproximate": false,
+        "source": "MANUAL"
+      }
+    ],
+    "expectedPct": 1.3970029970029922
+  },
+  {
+    "name": "btc_buy_fee_bnb_sell_fee",
+    "fills": [
+      {
+        "fillId": "1",
+        "positionId": "shared",
+        "side": "BUY",
+        "price": 100,
+        "quantity": 1,
+        "executedAtMs": 1700000000001,
+        "commission": 0.001,
+        "commissionAsset": "BTC",
+        "commissionAssetUsdtRate": null,
+        "referencePrice": 100.0,
+        "referenceAtMs": 1699999999999,
+        "timeApproximate": false,
+        "source": "MANUAL"
+      },
+      {
+        "fillId": "2",
+        "positionId": "shared",
+        "side": "SELL",
+        "price": 101,
+        "quantity": 0.999,
+        "executedAtMs": 1700000000002,
+        "commission": 0.0001,
+        "commissionAsset": "BNB",
+        "commissionAssetUsdtRate": 600,
+        "referencePrice": 100.0,
+        "referenceAtMs": 1699999999999,
+        "timeApproximate": false,
+        "source": "MANUAL"
+      }
+    ],
+    "expectedPct": 0.8389999999999986
+  }
+]

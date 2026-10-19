@@ -132,7 +132,7 @@ export default function App() {
       clearInterval(titleFlashIntervalRef.current);
       titleFlashIntervalRef.current = null;
     }
-    document.title = 'Crypto-G - BTC 现货量化买入雷达 (V1.17)';
+    document.title = 'Crypto-G - BTC 现货量化买入雷达';
   }, []);
 
   const flashTitle = useCallback((text1: string, text2: string) => {
@@ -220,6 +220,10 @@ export default function App() {
     document.addEventListener('visibilitychange',resumePermission);
     const permissionTimer=window.setInterval(resumePermission,10000);
     const unsubscribeSignal = notificationService.onSignalReceived(async (data: any, origin?: 'received' | 'opened') => {
+      if(data?.eventType==='WAVE_STATE_RESEARCH') {
+        if(origin==='opened') {setActiveTab('signals');if(data.eventId)focusMessage(String(data.eventId));}
+        return; // Research detail only: never invoke BUY chime, trade ledger or entry actions.
+      }
       if (data?.eventType === 'AI_BUY_ALERT') {
         const id=String(data.eventId || '');
         const expires=Number(data.expiresAt);

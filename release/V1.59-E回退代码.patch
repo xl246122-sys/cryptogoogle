@@ -1,0 +1,75 @@
+--- a/src/services/notificationService.ts
++++ b/src/services/notificationService.ts
+@@ -2,7 +2,6 @@
+ import { Capacitor } from '@capacitor/core';
+ import { PushNotifications, Channel } from '@capacitor/push-notifications';
+ import {refreshExitDevice} from './exitPush';
+-import {NotificationRelay,recordNotificationEvidence} from './notificationEvidence';
+ 
+ /**
+  * Hybrid Notification service supporting:
+@@ -93,8 +92,9 @@
+         const title = notif.title || data.title || data.strategyNameZh || data.scenarioNameZh || '';
+         const body = notif.body || data.body || data.summaryZh || data.message || data.reasonZh || '';
+         ingestMessage({ ...data, title, body });
+-        recordNotificationEvidence(data,'received');
+-        this.signalRelay.emit(data,'received');
++        if (this.signalCallback && data) {
++          this.signalCallback(data, 'received');
++        }
+       });
+ 
+       await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+@@ -105,8 +105,9 @@
+         const msgId = data.eventId || data.id || data.testId || data.deliveryId || notif.id || ('push_' + Date.now());
+         ingestMessage({ ...data, id: msgId, title, body });
+         focusMessage(String(msgId));
+-        recordNotificationEvidence(data,'opened');
+-        this.signalRelay.emit(data,'opened');
++        if (this.signalCallback && data) {
++          this.signalCallback(data, 'opened');
++        }
+       });
+       if (permStatus.receive === 'granted') {
+         this.hasPermission = true;
+@@ -118,10 +119,11 @@
+     }
+   }
+ 
+-  private signalRelay = new NotificationRelay();
++  private signalCallback: ((payload: any, origin?: 'received' | 'opened') => void) | null = null;
+ 
+   public onSignalReceived(callback: (payload: any, origin?: 'received' | 'opened') => void) {
+-    return this.signalRelay.subscribe(callback);
++    this.signalCallback = callback;
++    return () => { if (this.signalCallback === callback) this.signalCallback = null; };
+   }
+ 
+   public async requestPermission(): Promise<boolean> {
+--- a/src/components/views/SystemGuardView.tsx
++++ b/src/components/views/SystemGuardView.tsx
+@@ -1,5 +1,4 @@
+ import {ResearchPipelinePanel} from '../ResearchPipelinePanel';
+-import {NotificationEvidencePanel} from '../NotificationEvidencePanel';
+ import React, { useState, useEffect, useRef, useMemo } from 'react';
+ import {
+   Server,
+@@ -95,7 +94,6 @@
+     <div className="space-y-3 pb-8 animate-fadeIn">
+       <GuardLabDrawer market={macroTrend} />
+       <ResearchPipelinePanel />
+-      <NotificationEvidencePanel />
+       {/* 1. Global Overview Hero Card */}
+       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#161a26] via-[#121520] to-[#0d1017] border border-gray-800 p-3.5 shadow-lg">
+         <div className="flex items-center justify-between">
+--- a/package.json
++++ b/package.json
+@@ -10,7 +10,7 @@
+     "preview": "vite preview",
+     "clean": "rm -rf dist server.js",
+     "lint": "tsc --noEmit",
+-    "test": "node tests/run_python.mjs && node tests/run_ts.mjs tests/quantEngine.test.ts tests/signalValidity.test.ts tests/executionLedger.test.ts tests/marketState.test.ts tests/positions.test.ts tests/exitPush.test.ts tests/connectionStatus.test.ts tests/quickPaper.test.ts tests/stageB.test.ts tests/stageE.test.tsx tests/experimentalProtocol.test.ts tests/inbox.test.ts tests/waveIntegration.test.tsx tests/notificationEvidence.test.tsx tests/aiEngine.test.ts tests/startupState.test.ts tests/startupView.test.tsx"
++    "test": "node tests/run_python.mjs && node tests/run_ts.mjs tests/quantEngine.test.ts tests/signalValidity.test.ts tests/executionLedger.test.ts tests/marketState.test.ts tests/positions.test.ts tests/exitPush.test.ts tests/connectionStatus.test.ts tests/quickPaper.test.ts tests/stageB.test.ts tests/stageE.test.tsx tests/experimentalProtocol.test.ts tests/inbox.test.ts tests/waveIntegration.test.tsx tests/aiEngine.test.ts tests/startupState.test.ts tests/startupView.test.tsx"
+   },
+   "dependencies": {
+     "@capacitor/android": "^8.5.3",

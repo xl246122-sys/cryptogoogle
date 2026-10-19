@@ -1,5 +1,5 @@
 {
-  "id": "BTCUSDT_BURST_BREAKOUT_1792232078169",
+  "id": "BTCUSDT_BURST_BREAKOUT_1792314794839",
   "symbol": "BTCUSDT",
   "signalType": "BUY",
   "strategy": "BURST_BREAKOUT",
@@ -16,17 +16,18 @@
   "netRiskReward": "2.8648",
   "timeHorizon": "最长 240 分钟；止损/失效优先，不强制持有10分钟",
   "ruleScore": "64",
+  "rawRuleScore": "64",
   "ruleScoreBreakdown": "实体5+主动买量24+净盈亏比35",
   "decisionStatus": "BUY_CANDIDATE",
-  "confirmationTime": "1792232078169",
+  "confirmationTime": "1792314794839",
   "engineVersion": "Crypto-G V1.16",
   "reasonZh": "已收盘5m突破前高 $100.60；跌回该位即失效。 止损在已收盘结构低点 $100.00，目标来源：已确认局部高点/箱体中线等最近阻力前 0.05%；只向下限幅。规则分项：实体5+主动买量24+净盈亏比35。这不是上涨概率。历史胜率：未验证。",
   "volatilityLevel": "HIGH",
   "quantilePct": "100",
   "regime": "BULLISH",
   "historicalWinRateNote": "历史胜率：未验证",
-  "timestamp": "1792232078170",
-  "expiresAt": "1792232168170",
+  "timestamp": "1792314794841",
+  "expiresAt": "1792314884841",
   "entryMin": "100.6",
   "entryMax": "100.80097500000001",
   "breakoutLevel": "100.6",
@@ -38,5 +39,5 @@
   "estimatedFriction": "0.11",
   "netProfitPct2": "3.1588",
   "structureSupportPrice": "100.0",
-  "tradeRules": "{\"model\": \"BREAKOUT\", \"ruleVersion\": \"three-models-v2\", \"maxHoldMinutes\": 240, \"minNetTp1\": 0.59, \"minNetRr\": null, \"frictionPct\": null, \"maxNetTarget\": null, \"invalidationPrice\": 100.6, \"tp1Fraction\": 0.5, \"targetBasis\": \"已确认局部高点/箱体中线等最近阻力前 0.05%；只向下限幅\", \"exitRule\": \"价格触及止损或失效位退出剩余仓位；TP1按比例退出，余仓TP2退出；到期退出剩余仓位。止损不自动上移。\", \"tier\": null, \"tierLabel\": null}"
+  "tradeRules": "{\"model\": \"BREAKOUT\", \"ruleVersion\": \"three-models-v2\", \"maxHoldMinutes\": 240, \"minNetTp1\": 0.59, \"minNetRr\": null, \"frictionPct\": null, \"costSnapshot\": null, \"maxNetTarget\": null, \"invalidationPrice\": 100.6, \"tp1Fraction\": 0.5, \"targetBasis\": \"已确认局部高点/箱体中线等最近阻力前 0.05%；只向下限幅\", \"exitRule\": \"价格触及止损或失效位退出剩余仓位；TP1按比例退出，余仓TP2退出；到期退出剩余仓位。止损不自动上移。\", \"tier\": null, \"tierLabel\": null}"
 }

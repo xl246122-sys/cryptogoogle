@@ -11,6 +11,7 @@ from typing import List, Optional
 from .config import (V2_BREAKER_DAILY_R, V2_BREAKER_PAUSE_MS, V2_BREAKER_STOPS, V2_FRICTION_PCT,
                      V2_MAX_HOLD_MINUTES, V2_TIME_STOP_MINUTES, V2_TIME_STOP_PROGRESS_R, V2_TP1_FRACTION)
 from .indicators import ema
+from .cost_model import signal_cost
 
 CST = timezone(timedelta(hours=8))
 M1 = 60_000
@@ -21,15 +22,19 @@ VETO_AUDIT_MIN = 100
 def open_state(signal: dict, verdict: str = "PASS") -> dict:
     entry = float(signal["entry_price"])
     stop = float(signal["stop_loss"])
-    opened = int(signal["timestamp"])
+    opened = int(signal.get("filledAt", signal["timestamp"]))
+    cost = signal_cost(signal)
     return {
         "id": signal["alert_id"], "module": signal.get("module"), "verdict": verdict,
         "entry": entry, "stop": stop, "tp1": float(signal["target_tp1"]), "tp2": float(signal["target_tp2"]),
-        "breakeven": entry * (1 + V2_FRICTION_PCT / 100),
+        "costSnapshot": cost, "frictionPct": cost["frictionPct"],
+        "executionModelVersion": "settlement-v2.1", "pathStatus": "BAR_CONSERVATIVE",
+        "uncertaintyReasons": [], "filledAt": opened,
+        "breakeven": entry * (1 + cost["frictionPct"] / 100),
         "riskPct": (1 - stop / entry) * 100,
         "openedAt": opened, "fromBar": opened - opened % M1,
         "phase": "OPEN", "remaining": 1.0, "legs": [], "tp1At": None,
-        "timeChecked": False, "lastBar": 0, "mfePct": 0.0, "maePct": 0.0,
+        "timeChecked": False, "lastBar": -1, "mfePct": 0.0, "maePct": 0.0,
         "outcome": None, "closedAt": None, "pnlPct": None, "r": None,
         "invalidation": float(signal.get("invalidation_price") or stop),
         "reclaim": signal.get("reclaim_price"), "watch": None, "watchAt": None,
@@ -42,9 +47,12 @@ def _leg(state: dict, fraction: float, price: float, at: int, kind: str) -> None
 
 
 def _close(state: dict, at: int, outcome: str) -> dict:
-    pnl = sum(l["fraction"] * ((l["price"] / state["entry"] - 1) * 100 - V2_FRICTION_PCT) for l in state["legs"])
+    pnl = sum(l["fraction"] * ((l["price"] / state["entry"] - 1) * 100 - state.get("frictionPct", V2_FRICTION_PCT)) for l in state["legs"])
     state.update(phase="CLOSED", outcome=outcome, closedAt=at, pnlPct=round(pnl, 4),
-                 r=round(pnl / (state["riskPct"] + V2_FRICTION_PCT), 4))
+                 r=round(pnl / (state["riskPct"] + state.get("frictionPct", V2_FRICTION_PCT)), 4))
+    state["eligibleForValidation"] = state.get("executionModelVersion") == "settlement-v2.1" and state.get("pathStatus") != "PATH_UNCERTAIN"
+    if not state["eligibleForValidation"]:
+        state["conservativePnlPct"] = round(min(state["pnlPct"], -state["riskPct"] - state.get("frictionPct", V2_FRICTION_PCT)), 4)
     return state
 
 
@@ -60,7 +68,7 @@ def _trail_break(state: dict, m15: List[dict], at: int) -> Optional[float]:
     return last["close"] if level is not None and last["close"] < level else None
 
 
-def advance(state: dict, m1: List[dict], m15: List[dict]) -> dict:
+def _advance_legacy(state: dict, m1: List[dict], m15: List[dict]) -> dict:
     """Feed closed 1m bars (oldest first) and the closed 15m bars known at the same time."""
     if state["phase"] == "CLOSED":
         return state
@@ -108,6 +116,105 @@ def advance(state: dict, m1: List[dict], m15: List[dict]) -> dict:
     return state
 
 
+
+def advance(state: dict, m1: List[dict], m15: List[dict]) -> dict:
+    if state.get("executionModelVersion") != "settlement-v2.1":
+        return _advance_legacy(state, m1, m15)
+    return _advance_current(state, m1, m15)
+
+
+def _advance_current(state: dict, m1: List[dict], m15: List[dict]) -> dict:
+    """Feed closed 1m bars (oldest first) and the closed 15m bars known at the same time."""
+    if state["phase"] == "CLOSED":
+        return state
+    entry = state["entry"]
+    for bar in m1:
+        t = int(bar["time"])
+        if t < state["fromBar"] or t <= state["lastBar"]:
+            continue
+        end = int(bar["close_time"]) + 1
+        deadline = state["openedAt"] + V2_MAX_HOLD_MINUTES * M1
+        if end - t != M1:
+            _uncertain(state, "COARSE_PATH")
+        if t > max(state["fromBar"], state["lastBar"] + M1):
+            _uncertain(state, "PATH_GAP")
+        state["lastBar"] = t
+        if t < state["openedAt"]:
+            coverage = bar.get("tickCoverage") or {}
+            ticks = bar.get("executionTicks") or []
+            after = [tick for tick in ticks if state["openedAt"] <= tick["atMs"] < end]
+            if coverage.get("complete") is True and coverage.get("fromMs", end) <= state["openedAt"] and coverage.get("toMs", 0) >= end and after:
+                prices = [tick["price"] for tick in after]
+                bar = dict(bar, low=min(prices), high=max(prices), close=after[-1]["price"])
+            else:
+                _uncertain(state, "ENTRY_MINUTE")
+        if end > deadline:
+            # Never credit a target or a close observed after the deadline.
+            # With no boundary quote, this is explicitly a sensitivity value.
+            _uncertain(state, "DEADLINE_PRICE_UNKNOWN")
+            price = state.get("lastClose", entry)
+            conservative = min(price, state["breakeven"] if state["phase"] == "TP1" else state["stop"])
+            _leg(state, state["remaining"], conservative, deadline, "MAX_HOLD_UNCERTAIN")
+            return _close(state, deadline, "MAX_HOLD")
+        state["lastClose"] = bar["close"]
+        time_stop = state["openedAt"] + V2_TIME_STOP_MINUTES * M1
+        if state["phase"] == "OPEN" and not state["timeChecked"] and end > time_stop:
+            _uncertain(state, "TIME_STOP_PRICE_UNKNOWN")
+            state["timeChecked"] = True
+            _leg(state, state["remaining"], state["stop"], time_stop, "TIME_STOP_UNCERTAIN")
+            return _close(state, time_stop, "TIME_STOP")
+        state["mfePct"] = max(state["mfePct"], (bar["high"] / entry - 1) * 100)
+        state["maePct"] = min(state["maePct"], (bar["low"] / entry - 1) * 100)
+        if state["phase"] == "OPEN":
+            if bar["low"] <= state["stop"]:
+                _leg(state, 1.0, state["stop"], end, "STOP")
+                return _close(state, end, "STOP")
+            if bar["high"] >= state["tp1"]:
+                _leg(state, V2_TP1_FRACTION, state["tp1"], end, "TP1")
+                state.update(phase="TP1", tp1At=end)
+                if bar["high"] >= state["tp2"]:
+                    _leg(state, state["remaining"], state["tp2"], end, "TP2")
+                    return _close(state, end, "TP2")
+                if end >= deadline:
+                    _leg(state, state["remaining"], bar["close"], end, "MAX_HOLD")
+                    return _close(state, end, "TP1_MAX_HOLD")
+            if state["phase"] == "OPEN" and not state["timeChecked"] and end >= state["openedAt"] + V2_TIME_STOP_MINUTES * M1:
+                state["timeChecked"] = True
+                progress = (bar["close"] - entry) / (entry - state["stop"])
+                if progress < V2_TIME_STOP_PROGRESS_R:
+                    _leg(state, 1.0, bar["close"], end, "TIME_STOP")
+                    return _close(state, end, "TIME_STOP")
+        else:
+            if bar["low"] <= state["breakeven"]:
+                _leg(state, state["remaining"], state["breakeven"], end, "BREAKEVEN")
+                return _close(state, end, "TP1_BREAKEVEN")
+            if bar["high"] >= state["tp2"]:
+                _leg(state, state["remaining"], state["tp2"], end, "TP2")
+                return _close(state, end, "TP2")
+            if end % M15 == 0:
+                broke = _trail_break(state, m15, end)
+                if broke is not None:
+                    _leg(state, state["remaining"], broke, end, "TRAIL")
+                    return _close(state, end, "TP1_TRAIL")
+        if state["phase"] == "TP1" and not state["timeChecked"] and end >= state["openedAt"] + V2_TIME_STOP_MINUTES * M1:
+            state["timeChecked"] = True
+            if (bar["close"] - entry) / (entry - state["stop"]) < V2_TIME_STOP_PROGRESS_R:
+                _leg(state, state["remaining"], bar["close"], end, "TIME_STOP")
+                return _close(state, end, "TIME_STOP")
+        if end >= state["openedAt"] + V2_MAX_HOLD_MINUTES * M1:
+            _leg(state, state["remaining"], bar["close"], end, "MAX_HOLD")
+            return _close(state, end, "TP1_MAX_HOLD" if state["phase"] == "TP1" else "MAX_HOLD")
+    return state
+
+
+
+def _uncertain(state: dict, reason: str) -> None:
+    state["pathStatus"] = "PATH_UNCERTAIN"
+    reasons = state.setdefault("uncertaintyReasons", [])
+    if reason not in reasons:
+        reasons.append(reason)
+
+
 def breaker_state(closed: List[dict], now_ms: int) -> dict:
     """Pushed outcomes only. Two stops in a row, or -2R in the CST day, pause pushes for 4h."""
     rows = sorted((o for o in closed if o["verdict"] != "VETO" and o.get("closedAt")), key=lambda o: o["closedAt"])
@@ -131,8 +238,8 @@ def breaker_state(closed: List[dict], now_ms: int) -> dict:
 
 def veto_audit(closed: List[dict]) -> dict:
     """After 100 vetoed outcomes, the veto stays on only if vetoed signals did worse than passed ones."""
-    vetoed = [o["r"] for o in closed if o["verdict"] == "VETO"]
-    passed = [o["r"] for o in closed if o["verdict"] != "VETO"]
+    vetoed = [o["r"] for o in closed if o["verdict"] == "VETO" and o.get("eligibleForValidation", True)]
+    passed = [o["r"] for o in closed if o["verdict"] != "VETO" and o.get("eligibleForValidation", True)]
     mean = lambda xs: round(sum(xs) / len(xs), 4) if xs else None
     view = {"vetoed": len(vetoed), "passed": len(passed), "vetoedMeanR": mean(vetoed), "passedMeanR": mean(passed),
             "vetoEnabled": True}
@@ -228,15 +335,19 @@ class V2Tracker:
         return breaker_state(self.closed(), now_ms)
 
     def audit(self) -> dict:
-        return veto_audit(self.closed(5000))
+        return veto_audit([o for o in self.closed(5000) if o.get("eligibleForValidation") is True])
 
     def status(self, now_ms: int) -> dict:
         rows = self.closed()
+        all_rows = rows
+        rows = [o for o in rows if o.get("eligibleForValidation") is True]
         wins = [o for o in rows if o["r"] > 0]
         return {
-            "open": self.open_count(), "closed": len(rows),
+            "open": self.open_count(), "closed": len(all_rows), "validatedPathCount": len(rows),
+            "uncertainCount": sum(o.get("pathStatus") == "PATH_UNCERTAIN" for o in all_rows),
+            "legacyCount": sum(o.get("executionModelVersion") != "settlement-v2.1" for o in all_rows),
             "winRate": round(len(wins) / len(rows), 4) if rows else None,
             "meanR": round(sum(o["r"] for o in rows) / len(rows), 4) if rows else None,
-            "breaker": breaker_state(rows, now_ms), "veto": veto_audit(rows),
+            "breaker": breaker_state(all_rows, now_ms), "veto": veto_audit(rows),
             "recent": [{k: o[k] for k in ("id", "module", "verdict", "outcome", "r", "openedAt", "closedAt")} for o in rows[-10:]],
         }

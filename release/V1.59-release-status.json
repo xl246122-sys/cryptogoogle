@@ -1,0 +1,38 @@
+{
+  "versionName": "1.59",
+  "versionCode": 159,
+  "apkSha256": "154988af3b5ca9239c61f8f5ce1293349c2ba1c1f7fa05f4047c15124c9a1b28",
+  "apkBytes": 6358886,
+  "signerSha256": "72f972b0c7126b9b12eabb0047ead015934c87aedbd484831945f495b9de9998",
+  "signatureMatchesV158": true,
+  "signingType": "EXISTING_DEBUG",
+  "apkAssetsMatchDist": true,
+  "phoneAcceptance": "PARTIAL_PASS_LOCKSCREEN_COLD_START_REBOOT_USER_CONFIRMED",
+  "phoneAcceptanceEvidence": "audit/wave-stage-e-20261018/phone-lockscreen-acceptance.json",
+  "backendModified": false,
+  "testPushesSent": 3,
+  "phoneRebootAcceptance": "PASS_USER_TEXT_CONFIRMED_SCREENSHOT_SHOWS_PRIOR_TWO_RECORDS",
+  "phoneRebootAcceptanceEvidence": "audit/wave-stage-e-20261018/phone-reboot-acceptance.json",
+  "coldStartAcceptance": "PASS_USER_CONFIRMED",
+  "coldStartAcceptanceEvidence": "audit/wave-stage-e-20261018/phone-cold-start-acceptance.json",
+  "newWaveSenderConnected": false,
+  "tradeTierEnabled": false,
+  "validation": [
+    "notificationEvidence assertions",
+    "waveIntegration assertions",
+    "10 related tests",
+    "tsc --noEmit",
+    "vite build",
+    "cap sync android",
+    "Gradle assembleDebug",
+    "APK version/signature/assets"
+  ],
+  "sources": {
+    "src/services/notificationService.ts": "ba0f21a107edd993309f0f2b4abc309f85add1841091d37b2d6866e53334f1c6",
+    "src/services/notificationEvidence.ts": "230d8eafe13146ba287d7d3f98908fa594d615f0e01292f4f660d1f388e122b6",
+    "src/components/NotificationEvidencePanel.tsx": "2fda6ae5da686c02087925e21238589ec812335031e9d2af3dc93437206a0ff9",
+    "src/components/views/SystemGuardView.tsx": "f210599caecdacc4bd32d302a495923e2b25b149bebe92bf00d31ef657be09e8",
+    "tests/notificationEvidence.test.tsx": "dad1eea4f927920c0836f4747e8adc2c8e3af0979bafde4d20ba6a6bc79a8f06",
+    "android/app/build.gradle": "8ad5d9a7811102be4c49ea29f974ec7e8abc08eaed9626a775203019bfc2075b"
+  }
+}

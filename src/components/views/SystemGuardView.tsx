@@ -1,3 +1,5 @@
+import {ResearchPipelinePanel} from '../ResearchPipelinePanel';
+import {NotificationEvidencePanel} from '../NotificationEvidencePanel';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Server,
@@ -25,7 +27,6 @@ import {
 } from 'lucide-react';
 import { ScannerConfig, MacroTrendAnalysis } from '../../types/crypto';
 import { GuardLabDrawer } from '../HorizonPanels';
-import { strategySettings, families } from '../../services/strategySettings';
 import { soundService } from '../../services/soundService';
 import { ServerConnectionPanel } from '../ServerConnectionPanel';
 import { PositionMonitor } from '../PositionMonitor';
@@ -51,50 +52,6 @@ const INTERVAL_PRESETS = [
   { label: '5分钟', ms: 300000 },
 ];
 
-interface StrategyDef {
-  key: 'BURST_BREAKOUT' | 'FLASH_CRASH_REBOUND' | 'RANGE_OSCILLATION';
-  nameZh: string;
-  nameEn: string;
-  tag: string;
-  tagBg: string;
-  tagText: string;
-  description: string;
-  quantFormula: string;
-}
-
-const STRATEGIES: StrategyDef[] = [
-  {
-    key: 'BURST_BREAKOUT',
-    nameZh: '放量起爆追高模型',
-    nameEn: 'Burst Breakout',
-    tag: '顺势起爆',
-    tagBg: 'bg-[#3d3005]',
-    tagText: 'text-[#fdd663]',
-    description: '已收盘5m/15m突破；有效区间内入场，最近已确认阻力净空间≥0.40%，无阻力参考不交易；TP1减50%，余仓TP2。',
-    quantFormula: 'Close > PriorHigh · Volume ≥ 1.08× · TakerBuy ≥ 48% · UpperWick ≤ 45%',
-  },
-  {
-    key: 'FLASH_CRASH_REBOUND',
-    nameZh: '暴跌抄底反弹模块',
-    nameEn: 'Flash Crash Rebound',
-    tag: '稳健超跌',
-    tagBg: 'bg-[#122824]',
-    tagText: 'text-[#4db6ac]',
-    description: '累计跌幅≥5%且近1小时先高后低跌幅≥3%，通过瀑布和止跌过滤；最近阻力扣成本后不足1%则跳过。',
-    quantFormula: '急跌 + 右侧止跌/背离确认 · 净空间≥1% · TP1减70% · 余仓TP2/失效退出',
-  },
-  {
-    key: 'RANGE_OSCILLATION',
-    nameZh: '区间震荡获利模块',
-    nameEn: 'Range Oscillation',
-    tag: '箱体低吸',
-    tagBg: 'bg-[#232834]',
-    tagText: 'text-[#c4c7c5]',
-    description: '15m稳定箱体下沿低吸，上下沿重复测试并通过五类止跌过滤；最近阻力净空间不足1%则跳过。',
-    quantFormula: '稳定箱体 + 五类止跌过滤 · 净空间≥1% · TP1全出 · 破箱/止损退出',
-  },
-];
-
 export const SystemGuardView: React.FC<SystemGuardViewProps> = ({
   config,
   macroTrend,
@@ -114,85 +71,6 @@ export const SystemGuardView: React.FC<SystemGuardViewProps> = ({
   const toggleDrawer = (id: string) => {
     setOpenDrawers((prev) => ({ ...prev, [id]: !prev[id] }));
   };
-
-  // Cloud strategy settings state
-  const [cloud, setCloud] = useState('正在读取云端配置…');
-  const revision = useRef<number | null>(null);
-  const saving = useRef(false);
-
-  useEffect(() => {
-    let live = true;
-    const refresh = async () => {
-      if (saving.current) return;
-      try {
-        const v = await strategySettings();
-        if (live) {
-          revision.current = v.revision;
-          updateLocal({
-            activeStrategies: {
-              ...config.activeStrategies,
-              ...v.activeStrategies,
-            } as ScannerConfig['activeStrategies'],
-          });
-          setCloud(`云端已同步 · 版本 ${v.revision}`);
-        }
-      } catch (e) {
-        if (live) setCloud(String(e));
-      }
-    };
-    void refresh();
-    const timer = setInterval(refresh, 15000);
-    return () => {
-      live = false;
-      clearInterval(timer);
-    };
-  }, []);
-
-  const handleUpdateStrategyConfig = (next: Partial<ScannerConfig>) => {
-    if (!next.activeStrategies) {
-      updateLocal(next);
-      return;
-    }
-    if (saving.current || revision.current === null) {
-      setCloud('请等待云端配置读取完成');
-      return;
-    }
-    saving.current = true;
-    setCloud('正在保存云端配置…');
-    const activeStrategies = Object.fromEntries(
-      families.map((k) => [k, !!next.activeStrategies![k as keyof typeof next.activeStrategies]])
-    );
-    void strategySettings({ revision: revision.current, activeStrategies })
-      .then((v) => {
-        revision.current = v.revision;
-        updateLocal({
-          activeStrategies: {
-            ...config.activeStrategies,
-            ...v.activeStrategies,
-          } as ScannerConfig['activeStrategies'],
-        });
-        setCloud(`云端已生效 · 版本 ${v.revision}`);
-      })
-      .catch((e) => {
-        setCloud(`保存失败：${String(e)}；请重试`);
-      })
-      .finally(() => {
-        saving.current = false;
-      });
-  };
-
-  const toggleStrategy = (key: keyof typeof config.activeStrategies) => {
-    handleUpdateStrategyConfig({
-      activeStrategies: {
-        ...config.activeStrategies,
-        [key]: !config.activeStrategies[key],
-      },
-    });
-  };
-
-  const activeCount = useMemo(() => {
-    return STRATEGIES.filter((s) => config.activeStrategies[s.key]).length;
-  }, [config.activeStrategies]);
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const handleCopy = (text: string, key: string) => {
@@ -216,6 +94,8 @@ export const SystemGuardView: React.FC<SystemGuardViewProps> = ({
   return (
     <div className="space-y-3 pb-8 animate-fadeIn">
       <GuardLabDrawer market={macroTrend} />
+      <ResearchPipelinePanel />
+      <NotificationEvidencePanel />
       {/* 1. Global Overview Hero Card */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#161a26] via-[#121520] to-[#0d1017] border border-gray-800 p-3.5 shadow-lg">
         <div className="flex items-center justify-between">
@@ -231,7 +111,7 @@ export const SystemGuardView: React.FC<SystemGuardViewProps> = ({
             </div>
           </div>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-500/30 font-medium">
-            24/7 守护中
+            {macroTrend.stateSource==='SERVER' && macroTrend.dataReady ? '扫描快照新鲜' : '云端状态待核验'}
           </span>
         </div>
 
@@ -242,8 +122,8 @@ export const SystemGuardView: React.FC<SystemGuardViewProps> = ({
             <span className="text-emerald-400 font-mono font-medium text-[10.5px]">43.163...</span>
           </div>
           <div className="p-2 rounded-xl bg-[#0d1017] border border-gray-800/60 flex items-center justify-between">
-            <span className="text-gray-400 text-[10px]">策略激活</span>
-            <span className="text-blue-400 font-mono font-medium text-[10.5px]">{activeCount}/3 类</span>
+            <span className="text-gray-400 text-[10px]">规则版本</span>
+            <span className="text-blue-400 font-mono font-medium text-[10.5px]">v2 · 观察级</span>
           </div>
           <div className="p-2 rounded-xl bg-[#0d1017] border border-gray-800/60 flex items-center justify-between">
             <span className="text-gray-400 text-[10px]">大盘大势</span>
@@ -306,12 +186,12 @@ export const SystemGuardView: React.FC<SystemGuardViewProps> = ({
             </div>
             <div>
               <span className="text-xs font-semibold text-white block">BTC 量化买入策略模型</span>
-              <span className="text-[10px] text-gray-400">{cloud}</span>
+              <span className="text-[10px] text-gray-400">short-horizon-v2 · 云端固定规则</span>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-950/60 text-blue-300 border border-blue-700/40">
-              已启用 {activeCount}/3
+              S1–S5
             </span>
             {openDrawers.strategies ? (
               <ChevronUp className="w-4 h-4 text-gray-400" />
@@ -321,86 +201,13 @@ export const SystemGuardView: React.FC<SystemGuardViewProps> = ({
           </div>
         </button>
 
-        {openDrawers.strategies && (
-          <div className="p-3.5 border-t border-gray-800 space-y-3 bg-[#10131d] animate-fadeIn">
-            {/* Quick Presets Ribbon */}
-            <div className="flex items-center justify-between gap-1.5 text-xs">
-              <button
-                onClick={() => {
-                  const allOn = { BURST_BREAKOUT: true, FLASH_CRASH_REBOUND: true, RANGE_OSCILLATION: true };
-                  handleUpdateStrategyConfig({ activeStrategies: allOn as any });
-                }}
-                className="flex-1 py-1 px-2 rounded-lg bg-[#181d2a] hover:bg-gray-800 text-[10.5px] text-blue-300 border border-gray-700/80 text-center transition"
-              >
-                全部启用
-              </button>
-              <button
-                onClick={() => {
-                  const safeOn = { BURST_BREAKOUT: false, FLASH_CRASH_REBOUND: true, RANGE_OSCILLATION: true };
-                  handleUpdateStrategyConfig({ activeStrategies: safeOn as any });
-                }}
-                className="flex-1 py-1 px-2 rounded-lg bg-[#181d2a] hover:bg-gray-800 text-[10.5px] text-emerald-300 border border-gray-700/80 text-center transition"
-              >
-                防守反弹
-              </button>
-              <button
-                onClick={() => {
-                  const burstOn = { BURST_BREAKOUT: true, FLASH_CRASH_REBOUND: false, RANGE_OSCILLATION: false };
-                  handleUpdateStrategyConfig({ activeStrategies: burstOn as any });
-                }}
-                className="flex-1 py-1 px-2 rounded-lg bg-[#181d2a] hover:bg-gray-800 text-[10.5px] text-amber-300 border border-gray-700/80 text-center transition"
-              >
-                顺势起爆
-              </button>
-            </div>
-
-            {/* Individual Strategy Cards */}
-            <div className="space-y-2">
-              {STRATEGIES.map((strat) => {
-                const isEnabled = !!config.activeStrategies[strat.key];
-                return (
-                  <div
-                    key={strat.key}
-                    onClick={() => toggleStrategy(strat.key)}
-                    className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
-                      isEnabled
-                        ? 'bg-[#151a26] border-gray-700'
-                        : 'bg-[#11141c] border-gray-800 opacity-60'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs font-semibold ${isEnabled ? 'text-white' : 'text-gray-400'}`}>
-                          {strat.nameZh}
-                        </span>
-                        <span className={`text-[9.5px] px-1.5 py-0.2 rounded font-medium ${strat.tagBg} ${strat.tagText}`}>
-                          {strat.tag}
-                        </span>
-                      </div>
-
-                      {/* Custom iOS/M3 Pill Toggle */}
-                      <div
-                        className={`w-9 h-5 rounded-full transition-colors p-0.5 flex items-center ${
-                          isEnabled ? 'bg-blue-600 justify-end' : 'bg-gray-700 justify-start'
-                        }`}
-                      >
-                        <div className="w-4 h-4 rounded-full bg-white shadow-sm" />
-                      </div>
-                    </div>
-
-                    <p className="text-[10px] text-gray-400 mt-1 leading-relaxed">
-                      {strat.description}
-                    </p>
-
-                    <div className="mt-1 text-[9px] font-mono text-gray-500 truncate">
-                      模型: {strat.quantFormula}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        {openDrawers.strategies && <div className="p-3.5 border-t border-gray-800 space-y-2 text-xs text-gray-300">
+          <p>S1 急跌收复；S2 支撑回踩；S3 趋势回调；S4 收缩突破；S5 时段动量仅研究。</p>
+          <p>环境开放情况请看雷达收盘证据。S1–S4 尚未完成独立验证，提示均为观察级。</p>
+          <p>来回成本地板 0.24%（已核实 BNB 折扣为 0.19%）；TP1 净空间至少 0.50%；净盈亏比至少 1；结构止损 0.35%–1.20%。</p>
+          <p>TP1 卖 50%；余仓跟踪 15m EMA20 或 TP2；90 分钟进展不足 +0.3R 退出；最长 6 小时。账户风险预算为权益 0.5%。</p>
+          <p>旧版三模型开关已退出当前页面，历史 0.11% 成本记录不得视为 v2 结果。</p>
+        </div>}
       </div>
 
       {/* 4. Accordion Drawer: 实际持仓退出联动监控 (Position Exit Monitor) */}
@@ -420,7 +227,7 @@ export const SystemGuardView: React.FC<SystemGuardViewProps> = ({
           </div>
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-950/60 text-amber-300 border border-amber-700/40">
-              联动就绪
+              需展开核验
             </span>
             {openDrawers.positions ? (
               <ChevronUp className="w-4 h-4 text-gray-400" />

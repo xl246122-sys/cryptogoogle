@@ -38,7 +38,7 @@ assert.equal(messages().length,0);
 ingestMessage({eventId:'new',eventType:'AI_BUY_ALERT',timestamp:now+2});
 assert.equal(messages().length,1);
 autoClearMessages(now+3*60*60*1000+2);
-assert.equal(messages().length,0);
+assert.equal(messages().length,1,'Three-hour cycle must not erase persistent history');
 
 const normalize=(await import('../src/services/inbox')).normalizedCategory;
 assert.equal(normalize('阶段预警'),'准备入场');
@@ -53,3 +53,13 @@ assert.ok(messages().some(m=>m.id==='swipe-delete'));
 deleteMessage('swipe-delete');
 ingestMessage({eventId:'swipe-delete',eventType:'AI_BUY_ALERT',timestamp:Date.now()+30000000});
 assert.equal(messages().some(m=>m.id==='swipe-delete'),false,'Deleted messages must not return after cloud synchronization');
+
+const diagnostic={testId:'diagnostic-visible',eventType:'DIAGNOSTIC_TEST',title:'买入预警测试（非真实信号）',body:'只检查通知、声音和振动，不需要交易。',timestamp:Date.now()+31000000};
+ingestMessage(diagnostic);ingestMessage(diagnostic);
+assert.equal(messages().filter(m=>m.id===diagnostic.testId).length,1);
+assert.equal(messages().find(m=>m.id===diagnostic.testId)?.category,'推送测试');
+focusMessage(diagnostic.testId);assert.equal(getAndClearPendingFocus(),diagnostic.testId);
+readMessage(diagnostic.testId);assert.ok(messages().find(m=>m.id===diagnostic.testId)?.read);
+assert.equal(messages().find(m=>m.id===diagnostic.testId)?.body,diagnostic.body);
+const {parseCloudSignal}=await import('../src/services/signalValidity');
+assert.equal(parseCloudSignal({...diagnostic,signalType:'BUY',symbol:'BTCUSDT'}),null);

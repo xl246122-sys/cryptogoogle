@@ -30,3 +30,4 @@ audit/releases/*.tar.gz
 audit/
 *.sqlite3*
 *.ai-key
+.tmp/

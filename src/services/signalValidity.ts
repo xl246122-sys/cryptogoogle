@@ -21,6 +21,7 @@ const regimes: Record<string, MarketRegime> = { BULLISH: 'TRENDING_BULL', BEARIS
 
 /** Missing protocol fields never acquire a fabricated timestamp or analytics value. */
 export function parseCloudSignal(data: Record<string, unknown>): TradeSignal | null {
+  if(data?.eventType==='DIAGNOSTIC_TEST'||data?.eventType==='WAVE_STATE_RESEARCH'||data?.ruleVersion==='wave-state-v3-research')return null;
   if (!data || data.symbol !== 'BTCUSDT' || data.signalType !== 'BUY' || !strategies.includes(data.strategy as SignalStrategy)) return null;
   const required = ['entryPrice', 'targetTP1', 'targetTP2', 'stopLoss', 'timestamp', 'confirmationTime', 'expiresAt', 'entryMin', 'entryMax', 'ruleScore'];
   if (required.some(key => finiteNumber(data[key]) === undefined)) return null;
@@ -43,6 +44,7 @@ export function parseCloudSignal(data: Record<string, unknown>): TradeSignal | n
   if (!v2 && (holdBad || Math.abs(tradeRules.minNetTp1 - requiredMin) > 1e-9
       || tradeRules.maxNetTarget !== (short || experiment || model === 'BREAKOUT' ? null : model === 'REBOUND' ? 6 : 4))) return null;
   if (v2 && holdBad) return null;
+  if (v2 && tradeRules.frictionPct !== undefined && (!Number.isFinite(tradeRules.frictionPct) || tradeRules.frictionPct < (tradeRules.costSnapshot?.bnbVerified === true && tradeRules.costSnapshot?.bnbDiscount === true ? 0.19 : 0.24))) return null;
   if (!Number.isFinite(tradeRules.invalidationPrice) || tradeRules.invalidationPrice < sl || tradeRules.invalidationPrice >= entry
       || !Number.isFinite(tradeRules.tp1Fraction) || tradeRules.tp1Fraction <= 0 || tradeRules.tp1Fraction > 1
       || typeof tradeRules.exitRule !== 'string' || typeof tradeRules.targetBasis !== 'string') return null;
@@ -62,6 +64,7 @@ export function parseCloudSignal(data: Record<string, unknown>): TradeSignal | n
     profitPercent1: +(100 * (tp1 / entry - 1)).toFixed(2), profitPercent2: +(100 * (tp2 / entry - 1)).toFixed(2),
     stopLossPercent: +(100 * (1 - sl / entry)).toFixed(2), riskRewardRatio: +((tp1 - entry) / (entry - sl)).toFixed(2),
     timeHorizon: typeof data.timeHorizon === 'string' ? data.timeHorizon : '未提供', confidence: n('ruleScore'), ruleScore: n('ruleScore'),
+    rawRuleScore: finiteNumber(data.rawRuleScore),
     decisionStatus: 'WAIT_CONFIRMATION', confirmationTime: n('confirmationTime'), timestamp: n('timestamp'),
     expiresAt: n('expiresAt'), entryMin: n('entryMin'), entryMax: n('entryMax'), breakoutLevel,
     tierLabel: typeof data.tierLabel === 'string' ? data.tierLabel : typeof data.tier_label === 'string' ? data.tier_label : undefined,
@@ -95,7 +98,7 @@ export function entryIssue(signal: TradeSignal, quote: EntryQuote | null, now = 
   if (quote.price < signal.entryMin! || quote.price > signal.entryMax!) return '当前价格已离开有效入场区间';
   if (!(signal.stopLoss < quote.price && quote.price < signal.targetTP1)) return '当前价格已触及止盈或止损边界';
   const v2 = signal.tradeRules?.ruleVersion === 'short-horizon-v2';
-  const friction = v2 ? (signal.tradeRules?.frictionPct ?? 0.24) : SIGNAL_POLICY.friction;
+  const friction = v2 ? Math.max(signal.tradeRules?.costSnapshot?.bnbVerified === true && signal.tradeRules?.costSnapshot?.bnbDiscount === true ? 0.19 : 0.24, signal.tradeRules?.frictionPct ?? 0.24) : SIGNAL_POLICY.friction;
   const minRR = v2 ? (signal.tradeRules?.minNetRr ?? 1) : SIGNAL_POLICY.minRR;
   const net = (signal.targetTP1 / quote.price - 1) * 100 - friction;
   const risk = (1 - signal.stopLoss / quote.price) * 100 + friction;

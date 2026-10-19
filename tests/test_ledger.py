@@ -80,7 +80,7 @@ class LedgerTests(unittest.TestCase):
         system = self.ledger.position(opened["systemTwinId"])
         self.assertEqual(paper["exit_reason"], "USER_EXIT")
         self.assertEqual(paper["exit_price"], 100.4)
-        self.assertAlmostEqual(paper["state_payload"]["userNetPct"], round((100.4 / 100 - 1) * 100 - V2_FRICTION_PCT, 4))
+        self.assertAlmostEqual(paper["state_payload"]["userNetPct"], round((1.004 - .0005 - 1.0005) / 1.0005 * 100, 4))
         self.assertEqual(system["exit_reason"], "STOP")
         self.assertEqual(system["exit_price"], 99.5)
         label = self.ledger.label_for(opened["systemTwinId"])
@@ -187,7 +187,7 @@ class LedgerTests(unittest.TestCase):
         last["quantity"] = 0.03
         closed = self.ledger.record_sell(last, inventory_closed=True)
         sell = (100 * 0.01 + 120 * 0.03) / 0.04
-        self.assertAlmostEqual(closed["userNetPct"], round((sell / buy - 1) * 100 - V2_FRICTION_PCT, 4))
+        self.assertAlmostEqual(closed["userNetPct"], round((sell * .04 - .001 - (buy * .04 + .001)) / (buy * .04 + .001) * 100, 4))
         self.assertEqual(self.ledger.position(opened["paperTwinId"])["notional_usdt"], V2_PAPER_NOTIONAL_USDT)
 
     def test_system_close_uses_cache_bars_when_klines_are_empty(self):

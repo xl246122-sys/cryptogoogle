@@ -2,6 +2,8 @@
 import copy
 import math
 from .clock import at_time
+from .input_contract import INPUT_CONTRACT
+from .cost_model import cost_snapshot
 from .diagnostics import capture
 from .config import ENGINE_VERSION, RULE_VERSION, TRADE_POLICIES, FRICTION_PCT, V2_ENGINE_VERSION, V2_FRICTION_PCT, V2_RULE_VERSION
 from .features import TechnicalIndicators
@@ -31,6 +33,8 @@ def evaluate(snapshot):
         if not result['reasons']: result['reasons'] = ['MARKET_UNHEALTHY']
         return result
     try:
+        if s.get('inputContract') is not None and s['inputContract'] != INPUT_CONTRACT:
+            raise ValueError('INPUT_CONTRACT_MISMATCH')
         ticker, book = s['ticker'], s['book']
         if ticker.get('symbol') != 'BTCUSDT' or not book.get('is_valid'):
             raise ValueError('VENUE_OR_BOOK_INVALID')
@@ -59,16 +63,16 @@ def evaluate(snapshot):
         with at_time(now), capture() as reasons:
             # V1.12 REST limits include the forming bar: freeze the corresponding
             # closed windows so a growing websocket cache cannot alter EMA/peaks.
-            limits = {'1m':47,'5m':47,'15m':95,'1h':47,'4h':47}
+            limits = INPUT_CONTRACT['windows']
             bars = {k:v[-limits[k]:] for k,v in s['series'].items()}
             ticker = s['ticker']
             if 'context' in s:
                 from .engine_v2 import scan
                 signal, reasons, view = scan(
                     bars['15m'], bars['5m'], bars['1m'], ticker['ask_price'], book,
-                    s.get('context'), now, s.get('breaker'), s.get('derivatives'))
+                    s.get('context'), now, s.get('breaker'), s.get('derivatives'), s.get('costSnapshot'))
                 result.update(engineVersion=V2_ENGINE_VERSION, ruleVersion=V2_RULE_VERSION,
-                              assumedFrictionPct=V2_FRICTION_PCT, signal=signal,
+                              assumedFrictionPct=cost_snapshot(now, s.get("costSnapshot"))["frictionPct"], costSnapshot=cost_snapshot(now, s.get("costSnapshot")), signal=signal,
                               status='BUY_CANDIDATE' if signal else 'WAIT_CONFIRMATION',
                               reasons=reasons, shortHorizonV2=view)
                 try:

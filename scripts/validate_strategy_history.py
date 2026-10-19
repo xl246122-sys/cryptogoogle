@@ -6,7 +6,10 @@ import argparse
 import json
 import math
 import sqlite3
-import zlib
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scratch'))
+from cryptog.storage import decode_event
 
 
 def validate(path, immutable=False):
@@ -27,7 +30,7 @@ def validate(path, immutable=False):
     upper = max((s['timestamp']+s['max_hold_minutes']*60000 for s in signals),default=0)
     healthy=0
     for at,raw in db.execute("SELECT at_ms,payload FROM events WHERE kind='EVALUATION' AND at_ms BETWEEN ? AND ? ORDER BY at_ms,id",(lower,upper+10000)):
-        event=json.loads(zlib.decompress(raw) if isinstance(raw,bytes) else raw)
+        event=decode_event(raw, db)
         snap=event['input']
         if not snap.get('healthy'): continue
         healthy+=1

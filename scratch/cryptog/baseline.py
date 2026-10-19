@@ -145,6 +145,8 @@ def evaluate_history(data: Dict[str, List[dict]], coverage: Optional[dict] = Non
         trades[module].append({
             "entryMs": filled["time"], "exitMs": labeled["closedAt"], "pnlPct": labeled["pnlPct"],
             "r": labeled["r"], "outcome": labeled["outcome"], "triggerMs": trigger_ms,
+            "eligibleForValidation": labeled.get("eligibleForValidation", False),
+            "conservativePnlPct": labeled["conservativePnlPct"] if labeled.get("conservativePnlPct") is not None else labeled["pnlPct"],
         })
         for multiple in (0.5, 1.0, 2.0):
             take = r_multiple_take(filled["price"], setup["stop"], multiple)
@@ -227,7 +229,8 @@ def evaluate_history(data: Dict[str, List[dict]], coverage: Optional[dict] = Non
                 "promotion": {"passes": False, "gaps": ["S5 只做研究，不进入交易级"]},
             }
             continue
-        filled = trades[name]
+        all_filled = trades[name]
+        filled = [t for t in all_filled if t.get("eligibleForValidation")]
         groups = {"IS": [], "OOS": [], "PURGED": [], "ALL": []}
         for trade in filled:
             fold = assign_fold(trade["entryMs"], trade["exitMs"], cut)
@@ -241,7 +244,9 @@ def evaluate_history(data: Dict[str, List[dict]], coverage: Optional[dict] = Non
         modules[name] = {
             "candidates": len(rows),
             "blocked": sum(1 for row in rows if row["blocked"]),
-            "filled": len(filled),
+            "filled": len(all_filled), "eligibleCount": len(filled),
+            "uncertainCount": len(all_filled)-len(filled),
+            "conservativeAll": _clean(summarize_returns([t["conservativePnlPct"] for t in all_filled], end_ms-start_ms, 1)),
             "candidatesPerDay": len(rows) / span_days,
             "inSample": _clean(summarize_returns(groups["IS"], is_span, 1)),
             "outOfSample": oos,

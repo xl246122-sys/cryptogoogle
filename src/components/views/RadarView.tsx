@@ -1,6 +1,7 @@
 import {DecisionReasons} from '../DecisionReasons';
 import React from 'react';
 import {TrendStrengthIndicator} from '../TrendStrengthIndicator';
+import {ClosedContextCard} from '../ClosedContextCard';
 import { MarketTicker, TradeSignal, MacroTrendAnalysis } from '../../types/crypto';
 import {
   TrendingUp,
@@ -84,7 +85,7 @@ export const RadarView: React.FC<RadarViewProps> = ({
         </button>
       </div>
 
-      <TrendStrengthIndicator macroTrend={macroTrend} /><DecisionReasons market={macroTrend} />
+      <TrendStrengthIndicator macroTrend={macroTrend} /><ClosedContextCard market={macroTrend}/><DecisionReasons market={macroTrend} />
 
       {/* 4. Live BTC Market Card */}
       <div className="p-3.5 rounded-2xl bg-[#1c2029] border border-[#2b313f] shadow-sm space-y-3">

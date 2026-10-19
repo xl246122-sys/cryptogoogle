@@ -1,6 +1,7 @@
 """Read-only counts and time-spaced rejection samples; never prints credentials."""
 import collections,json,sqlite3,sys,time,zlib
 sys.path.insert(0,'/opt/shotcrypto')
+from cryptog.storage import decode_event
 from cryptog.config import MIN_GROSS_TP1,MIN_NET_TP1,TRADE_POLICIES
 db=sqlite3.connect('file:/opt/shotcrypto/model_library/monitor-v1.sqlite3?mode=ro',uri=True)
 since=int(time.time()*1000)-86400000
@@ -14,7 +15,7 @@ reasons=collections.Counter(); checks=collections.defaultdict(collections.Counte
 for at,raw in db.execute("SELECT at_ms,payload FROM events WHERE kind='EVALUATION' AND at_ms>=? ORDER BY at_ms",(since,)):
  if at-last<60000:continue
  last=at;sampled+=1
- event=json.loads(zlib.decompress(raw) if isinstance(raw,bytes) else raw)
+ event=decode_event(raw, db)
  decision=event.get('output') or event.get('decision') or {}
  reasons.update(decision.get('reasons',[]))
  for row in decision.get('research',[]):

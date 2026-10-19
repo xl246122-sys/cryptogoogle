@@ -1,0 +1,5 @@
+{
+  "status": "ABORTED",
+  "reason": "SQLite close_time-only bound caused a slow reverse scan; add indexed open_time bound. No result selected.",
+  "atMs": 1792299399961
+}

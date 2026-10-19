@@ -1,4 +1,5 @@
 import { SwipeMessageRow } from './SwipeMessageRow';
+import {WaveMessageDetails} from './WaveMessageDetails';
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   Bell,
@@ -89,10 +90,10 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
 
   // Sync and listen for inbox updates
   useEffect(() => {
-    const refresh = () => setRows(messages());
+    const refresh = () => {setRows(messages());setFocusedModalItem(old=>old?messages().find(m=>m.id===old.id)||old:null);};
     window.addEventListener('cryptog-inbox', refresh);
     void syncInbox();
-    const timer = setInterval(() => void syncInbox(), 12000);
+    const timer = setInterval(() => {refresh();void syncInbox();}, 12000);
     return () => {
       clearInterval(timer);
       window.removeEventListener('cryptog-inbox', refresh);
@@ -106,6 +107,7 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
       const current = messages();
       const found = current.find((m) => m.id === targetId);
       if (found) {
+        setActiveTab('history');
         setExpandedId(found.id);
         setFocusedModalItem(found);
         if (!found.read) {
@@ -118,10 +120,9 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
     };
 
     // Check cold launch pending ID
-    const pendingId = getAndClearPendingFocus();
-    if (pendingId) {
-      handleFocusId(pendingId);
-    }
+    const tryPending = () => {const pendingId=getAndClearPendingFocus();if(pendingId)handleFocusId(pendingId);};
+    tryPending();
+    window.addEventListener('cryptog-inbox',tryPending);
 
     // Listen for runtime custom events
     const handleEvent = (e: Event) => {
@@ -131,7 +132,7 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
       }
     };
     window.addEventListener('cryptog-focus-message', handleEvent);
-    return () => window.removeEventListener('cryptog-focus-message', handleEvent);
+    return () => {window.removeEventListener('cryptog-focus-message', handleEvent);window.removeEventListener('cryptog-inbox',tryPending);};
   }, []);
 
   // Compute unread counts per category & noise isolation
@@ -155,7 +156,7 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
   const activeNoiseCount = activeTab === 'unread' ? noiseUnreadRows.length : noiseTotalRows.length;
 
   const categories = useMemo(() => {
-    const list = ['全部', 'AI买入预警', '准备入场', '入场', '离场'];
+    const list = ['全部', '四阶段研究', '推送测试', 'AI买入预警', '准备入场', '入场', '离场'];
     return list.map((cat) => {
       let count = 0;
       let total = 0;
@@ -437,10 +438,10 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
         {open && (
           <div className="p-3 space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs text-gray-400">每3小时自动清空全部消息</span>
+              <span className="text-xs text-gray-400">消息持续留存；清理保留阶段、持仓及有效计划</span>
               <button onClick={() => { clearAllMessages(); setRows(messages()); }}
                 className="flex items-center gap-1 rounded-lg px-3 py-2 text-xs text-rose-300 bg-gray-800">
-                <Trash2 className="w-3.5 h-3.5" />一键清除消息
+                <Trash2 className="w-3.5 h-3.5" />清理普通消息
               </button>
             </div>
 
@@ -583,6 +584,7 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
                         }`}
                       >
                         <div className="px-3 pb-3 pt-1 border-t border-gray-800/80 bg-[#121622]/90 space-y-3">
+                          <WaveMessageDetails data={msg.extra}/>
                           {/* 1. Key Quantitative Trading Metrics 4-Grid Card (If parameters exist) */}
                           {p.hasParams && (
                             <div className="grid grid-cols-2 gap-2 text-xs font-mono pt-1">
@@ -773,6 +775,7 @@ export function MessagePanel({ onSwitchTab }: { onSwitchTab?: (tab: string) => v
               </div>
 
               {/* Key Trading Metrics Grid (If trading parameters exist) */}
+              <WaveMessageDetails data={focusedModalItem.extra}/>
               {p.hasParams && (
                 <div className="grid grid-cols-2 gap-2 text-xs font-mono">
                   <div className="rounded-xl bg-[#0e121a] border border-gray-800/80 p-2.5 space-y-0.5">

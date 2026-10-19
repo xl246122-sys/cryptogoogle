@@ -1,5 +1,5 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {connection, saveConnection, clearConnection, editedConnection, ServerConnection} from '../services/serverConnection';
+import {connection, saveConnection, clearConnection, editedConnection, ServerConnection,credentialStorageStatus} from '../services/serverConnection';
 import {notificationService} from '../services/notificationService';
 import {bindExitDevice} from '../services/exitPush';
 import {inspectConnection, ConnectionStatus} from '../services/connectionStatus';
@@ -22,19 +22,22 @@ export function ServerConnectionPanel() {
   async function run(action:()=>Promise<void>,quiet=false){
     if(working.current)return;working.current=true;setBusy(true);
     if(!quiet){setError('');setMessage('');}
-    try{await action();if(mounted.current){setError('');if(quiet)setMessage('');}}
-    catch(e){if(mounted.current)setError(e instanceof Error?e.message:'检测失败，请重试');}
+    try{await action();if(mounted.current && !quiet)setError('');}
+    catch(e){if(mounted.current && !quiet)setError(e instanceof Error?e.message:'检测失败，请重试');}
     finally{working.current=false;if(mounted.current)setBusy(false);}
   }
   async function bind(){
+    setMessage('正在获取手机推送地址…');
     const pushToken=await notificationService.ensureDeviceToken();
+    setMessage('正在向服务器绑定本机…');
     await bindExitDevice(pushToken);
+    setMessage('正在核验本机绑定…');
     const next=await check();
     if(next.binding!=='bound')throw new Error('尚未确认本机绑定，请重新检测');
     setMessage(next.pushEnabled?'本机绑定成功':'本机绑定成功，服务端推送未开启');
   }
   async function setup(value:ServerConnection){
-    saveConnection(value);setSaved(connection());setUrl(connection().url);setToken('');setStatus(null);
+    await saveConnection(value);setSaved(connection());setUrl(connection().url);setToken('');setStatus(null);
     setMessage('凭据已保存，正在验证连接…');
     await check();setExpanded(false);setMessage('连接验证通过，正在绑定本机…');await bind();
   }
@@ -72,10 +75,10 @@ export function ServerConnectionPanel() {
           void run(async()=>{if(file.size>8192)throw new Error('配置文件过大');await setup(JSON.parse(await file.text()));});
         }}/></label>
         {saved && <button disabled={busy} className="p-2 text-gray-400" onClick={()=>void run(async()=>{
-          await bindExitDevice(null);clearConnection();setSaved(null);setStatus(null);setToken('');setMessage('已解绑并移除连接，本地成交记录保留');
+          await bindExitDevice(null);await clearConnection();setSaved(null);setStatus(null);setToken('');setMessage('已解绑并移除连接，本地成交记录保留');
         })}>解绑并移除</button>}
       </div>
-      <p className="text-[11px] text-gray-500">每个凭据绑定一台手机。凭据隐藏保存；更换手机后需重新绑定。</p>
+      <p className="text-[11px] text-gray-500">{credentialStorageStatus()}。每个凭据绑定一台手机；更换手机后需重新绑定。解绑只移除本机连接，凭据本身需由服务端撤销。</p>
     </div>}
   </section>;
 }

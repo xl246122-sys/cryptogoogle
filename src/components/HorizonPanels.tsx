@@ -9,7 +9,7 @@ const LOCAL_LAB: ReleaseLab = {
   l1: { status: 'INSUFFICIENT', applied: false, samples: null, minSamples: 200 },
   promotions: 0,
   hypotheses: [],
-  note: '云端尚未返回晋级进度。五个形态继续按观察级·未验证推送。',
+  note: '云端尚未返回晋级进度。S1–S4 为观察级·未验证；S5 仅研究，不发买入提示。',
 };
 
 function money(value?: number) {

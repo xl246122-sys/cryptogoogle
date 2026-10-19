@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ExecutionFill, summarizeFills, latencyMetrics, validateFill} from '../src/services/executionLedger';
-import {rememberAction, libraryJournal, flushLibraryQueue, effectiveExecutionRows} from '../src/services/modelLibrary';
+import {rememberAction, libraryJournal, flushLibraryQueue, effectiveExecutionRows, allLibraryJournal, bindUnassignedJournal} from '../src/services/modelLibrary';
 
 const now = Date.now()-100000;
 const fill = (id='buy', side:'BUY'|'SELL'='BUY', updates:Partial<ExecutionFill>={}):ExecutionFill => ({
@@ -74,8 +74,9 @@ test('legacy queue-only actions migrate without losing pending events',async()=>
   memory.clear();globalThis.fetch=async()=>{throw new Error('offline');};
   memory.setItem('shotcrypto_model_library_v1',JSON.stringify([action('old')]));
   memory.setItem('shotcrypto_model_library_queue_v1',JSON.stringify([action('old'),action('queue-only')]));
-  const rows=libraryJournal();assert.equal(rows.length,2);assert.ok(rows.every(r=>r.status==='pending'));
-  assert.equal(libraryJournal().length,2);
+  const rows=allLibraryJournal();assert.equal(rows.length,2);assert.ok(rows.every(r=>r.status==='pending'));
+  assert.equal(libraryJournal().length,0);
+  bindUnassignedJournal();assert.equal(libraryJournal().length,2);
 });
 test('quota failure propagates and cannot masquerade as saved; corrupt journal is not erased',()=>{
   memory.clear();libraryJournal();const set=memory.setItem.bind(memory);memory.setItem=()=>{throw new Error('QuotaExceeded');};
@@ -94,4 +95,32 @@ test('no action POST is sent to an old server without idempotency protocol',asyn
   globalThis.fetch=async()=>{posts++;return ack('a');};
   rememberAction(action('a'));await flushLibraryQueue();supportsProtocol=true;
   assert.equal(posts,0);assert.equal(libraryJournal()[0].status,'pending');
+});
+import {previewFillImport} from '../src/services/fillImport';
+import {saveConnection} from '../src/services/serverConnection';
+test('normalized import accepts journal export, sorts partial fills and detects conflicting duplicates',()=>{
+ const buy=fill('import-buy'),sell=fill('import-sell','SELL',{quantity:.5});
+ const preview=previewFillImport([{action:action('notice')},{action:{fill:sell}},{action:{fill:buy}}],[]);
+ assert.deepEqual(preview.fills.map(f=>f.fillId),['import-buy','import-sell']);
+ assert.equal(previewFillImport([buy],preview.fills).duplicates,1);
+ assert.throws(()=>previewFillImport([{...buy,price:101}],preview.fills));
+ assert.throws(()=>previewFillImport([sell],[]));
+});
+test('switching connection mid-flight never sends pending old records to the new server',async()=>{
+ memory.clear();let finish!:(v:Response)=>void;const urls:string[]=[];
+ globalThis.fetch=async(input)=>{urls.push(String(input));return await new Promise<Response>(r=>finish=r);};
+ rememberAction(action('scope-a'));await new Promise(r=>setImmediate(r));rememberAction(action('scope-b'));
+ saveConnection({url:'https://different.test',token:'another_device_credential_12345678901234567890'});
+ finish(ack('scope-a'));await flushLibraryQueue();
+ assert.equal(libraryJournal().length,0);assert.equal(allLibraryJournal().length,2);
+ assert.throws(()=>rememberAction(action('scope-a')));
+ globalThis.fetch=async(input)=>{urls.push(String(input));return ack('scope-new');};
+ rememberAction(action('scope-new'));await flushLibraryQueue();
+ assert.equal(urls.length,2);assert.ok(urls[0].startsWith('https://example.test'));assert.ok(urls[1].startsWith('https://different.test'));
+ assert.equal(allLibraryJournal().find(r=>r.action.eventId==='scope-b')?.status,'pending');
+});
+test('journal import respects append-only corrections and rejected records',()=>{
+ const original=fill('old-import');const correction=fill('corrected-import','BUY',{price:101});
+ const preview=previewFillImport([{action:{eventId:'old',fill:original}}, {action:{eventId:'new',replacesEventId:'old',fill:correction}}, {status:'rejected',action:{eventId:'rejected',fill:fill('rejected')}}],[]);
+ assert.deepEqual(preview.fills.map(f=>f.fillId),['corrected-import']);
 });

@@ -69,6 +69,8 @@ export interface VolatilityRegime {
 }
 
 export interface MacroTrendAnalysis {
+  decisionContext?: {atMs:number; frames:Record<string,{closeTime:number;state:string}>;gates:Record<string,boolean>;reasons:string[]};
+  costSnapshot?: {costModelVersion: string; frictionPct: number; applicableAtMs: number; source?: string};
   stateSource?: 'SERVER' | 'UNAVAILABLE' | 'CACHE';
   rejectionReasons?: string[];
   research?: {label:string;status:string;reasons:string[]}[];
@@ -130,6 +132,7 @@ export interface TradeRules {
   minNetTp1: number;
   minNetRr?: number;
   frictionPct?: number;
+  costSnapshot?: {costModelVersion: string; frictionPct: number; floorPct: number; bnbDiscount?: boolean; bnbVerified?: boolean; applicableAtMs: number};
   maxNetTarget: number | null;
   invalidationPrice: number;
   tp1Fraction: number;
@@ -156,6 +159,7 @@ export interface TradeSignal {
   timeHorizon: string; // e.g. "15m - 1.5h"
   confidence: number; // 规则匹配度评分 (0 - 100)
   ruleScore?: number; // 确定性规则得分 (0 - 100)
+  rawRuleScore?: number; // 原始加分保留，展示分封顶不代表胜率
   decisionStatus?: DecisionStatus; // 统一决策状态
   confirmationTime?: number; // 确认K线收盘时间戳
   engineVersion?: string; // 引擎版本

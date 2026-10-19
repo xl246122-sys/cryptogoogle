@@ -9,6 +9,13 @@ import { QuantEngine } from './legacy/quantEngine.v112';
 import { positionRuleNotice } from '../src/services/positionRules';
 
 const wire = JSON.parse(readFileSync(new URL('./signal_payload.fixture.json', import.meta.url), 'utf8'));
+test('bounded rule score accepts an independently preserved raw score', () => {
+  const parsed = parseCloudSignal({ ...wire, ruleScore: '100', rawRuleScore: '124' });
+  assert.ok(parsed);
+  assert.equal(parsed.ruleScore, 100);
+  assert.equal(parsed.rawRuleScore, 124);
+  assert.equal(parseCloudSignal({ ...wire, ruleScore: '124' }), null);
+});
 test('AI card rejects expired, stale, non-BTC and nonfinite opportunities',()=>{
   const now=1000000,q={price:100,timestamp:now};
   const data={symbol:'BTCUSDT',signalType:'BUY',scenario:'FLASH_REBOUND_FAST',entryMin:99.9,entryMax:100.05,targetTP1:100.7,stopLoss:99.7,atMs:now,expiresAt:now+10000,cardText:'six fields'};

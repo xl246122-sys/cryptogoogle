@@ -8,8 +8,21 @@ import zlib
 def canonical(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',',':'), allow_nan=False)
 
-def decode_event(raw):
-    return json.loads(zlib.decompress(raw) if isinstance(raw,bytes) else raw)
+def decode_event(raw, db=None):
+    event = json.loads(zlib.decompress(raw) if isinstance(raw,bytes) else raw)
+    refs = event.pop('input_refs_v1', None)
+    if refs is not None:
+        if db is None:
+            raise ValueError('Evaluation references require the journal connection')
+        for field, digest in refs.items():
+            row = db.execute('SELECT payload FROM evaluation_inputs WHERE digest=?', (digest,)).fetchone()
+            if row is None:
+                raise ValueError('Missing evaluation input: ' + digest)
+            data = zlib.decompress(row[0])
+            if hashlib.sha256(data).hexdigest() != digest:
+                raise ValueError('Corrupt evaluation input: ' + digest)
+            event['input'][field] = json.loads(data)
+    return event
 
 class EventStore:
     def __init__(self, path):
@@ -19,6 +32,7 @@ class EventStore:
         self.db.execute('PRAGMA synchronous=FULL')
         self.db.executescript('''
         CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, at_ms INTEGER NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS evaluation_inputs(digest TEXT PRIMARY KEY, payload BLOB NOT NULL);
         CREATE TABLE IF NOT EXISTS outbox(id TEXT PRIMARY KEY, payload TEXT NOT NULL, expires INTEGER NOT NULL,
             state TEXT NOT NULL DEFAULT 'PENDING', attempts INTEGER NOT NULL DEFAULT 0, due INTEGER NOT NULL DEFAULT 0,
             last_error TEXT, sent_ms INTEGER);
@@ -42,7 +56,27 @@ class EventStore:
     def record_evaluation(self, snapshot, decision):
         raw = canonical(snapshot)
         digest = hashlib.sha256(raw.encode()).hexdigest()
-        self.append('evaluation:'+digest,snapshot['atMs'],'EVALUATION',{'input':snapshot,'decision':decision})
+        # Keep every tick and decision; share unchanged candle/context arrays losslessly.
+        compact, refs = dict(snapshot), {}
+        with self.lock, self.db:
+            for field in ('series', 'context'):
+                if field not in compact:
+                    continue
+                data = canonical(compact.pop(field)).encode()
+                key = hashlib.sha256(data).hexdigest()
+                self.db.execute('INSERT OR IGNORE INTO evaluation_inputs VALUES(?,?)',
+                                (key, zlib.compress(data, 3)))
+                refs[field] = key
+            payload = zlib.compress(canonical({'input': compact, 'input_refs_v1': refs,
+                                              'decision': decision}).encode(), 3)
+            event_id = 'evaluation:' + digest
+            old = self.db.execute('SELECT payload FROM events WHERE id=?', (event_id,)).fetchone()
+            if old:
+                if decode_event(old[0], self.db) != {'input': snapshot, 'decision': decision}:
+                    raise ValueError('Event ID content conflict')
+            else:
+                self.db.execute('INSERT INTO events VALUES(?,?,?,?)',
+                                (event_id, snapshot['atMs'], 'EVALUATION', payload))
         # Immutable first shadow candidate per variant/confirmation; never enqueue.
         with self.lock, self.db:
             for row in decision.get('research',[]):
@@ -151,7 +185,7 @@ class EventStore:
     def evaluations(self):
         with self.lock:
             rows = self.db.execute("SELECT payload FROM events WHERE kind='EVALUATION' ORDER BY at_ms,id").fetchall()
-        return [decode_event(r[0]) for r in rows]
+            return [decode_event(r[0], self.db) for r in rows]
 
     def close(self):
         with self.lock: self.db.close()

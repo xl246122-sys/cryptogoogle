@@ -18,7 +18,7 @@ from .config import (
     V2_SHADOW_MS, V2_TIER_LABEL, V2_TIER_TRADE, V2_TIER_TRADE_LABEL, V2_TIER_TRIAL, V2_TIER_TRIAL_LABEL,
     V2_TIER_WATCH, V2_TRIAL_MS,
 )
-from .validation import assign_fold, oos_cut, promotion_decision, summarize_returns, unlearnable_gaps
+from .validation import assign_fold, oos_cut, promotion_decision, summarize_returns, unlearnable_gaps, launch_decision, pbo
 
 MODULES = ("S1", "S2", "S3", "S4")
 STAGES = ("RESEARCH", "SHADOW", "TRIAL", "LIVE")
@@ -37,6 +37,9 @@ CREATE TABLE IF NOT EXISTS l1_reports(
     id TEXT PRIMARY KEY,
     at_ms INTEGER NOT NULL,
     payload TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS release_candidates(
+    module TEXT NOT NULL, stage_started_ms INTEGER NOT NULL, candidate_id TEXT NOT NULL,
+    PRIMARY KEY(module, stage_started_ms, candidate_id));
 """
 
 
@@ -272,6 +275,54 @@ def fit_meta_label(samples) -> dict:
     }
 
 
+def stage_review(module, stage, started, now, book, evidence):
+    """Elapsed time is necessary, never sufficient. No automatic caller supplies evidence.
+
+    Evidence must describe a reviewed, frozen independent experiment and actual
+    comparable trial columns; stage returns are recomputed from unique closed trades.
+    """
+    gaps = []
+    evidence = evidence or {}
+    if (evidence.get('module') != module or evidence.get('stage') != stage
+            or evidence.get('stageStartedMs') != started or evidence.get('asOfMs') != now
+            or evidence.get('independent') is not True or evidence.get('dataQualityPassed') is not True
+            or not evidence.get('experimentId') or not evidence.get('manifestSha256')):
+        gaps.append('缺少与本阶段及复核时点一致的独立试验/数据质量证据')
+    unique = {}
+    for trade in book:
+        key = trade.get('candidateId')
+        if (not key or key in unique or trade.get('eligibleForValidation') is not True
+                or not isinstance(trade.get('netPct'), (int, float)) or not math.isfinite(trade['netPct'])
+                or not started <= (trade.get('openedMs') or 0) < (trade.get('closedMs') or 0) <= now):
+            gaps.append('阶段交易存在重复、时间越界、无效收益或不确定路径')
+            continue
+        unique[key] = trade
+    columns = evidence.get('trialReturns') or []
+    trial_ids = evidence.get('trialIds') or []
+    timeline = evidence.get('timelineMs') or []
+    n_trials = evidence.get('nTrials')
+    matrix_ok = (isinstance(n_trials, int) and not isinstance(n_trials, bool) and n_trials >= 2
+                 and len(columns) == n_trials == len(trial_ids) == len(set(trial_ids))
+                 and len(timeline) >= 16 and all(isinstance(t, int) for t in timeline)
+                 and all(a < b for a, b in zip(timeline, timeline[1:]))
+                 and all(len(c) == len(timeline) and all(isinstance(v, (int, float)) and math.isfinite(v) for v in c) for c in columns))
+    pbo_value = pbo(columns) if matrix_ok else None
+    if not matrix_ok:
+        gaps.append('缺少全部实际试验在同一时间轴上的收益矩阵')
+    summary = summarize_returns([t['netPct'] for t in unique.values()], now-started,
+                                n_trials if isinstance(n_trials, int) and n_trials > 0 else 1)
+    decision = promotion_decision(summary, summary['nTrials'], pbo_value)
+    gaps.extend(decision['gaps'])
+    if stage == 'TRIAL' and not launch_decision(summary, evidence.get('recall'))['passes']:
+        gaps.append('正式上线胜率/期望/波段召回未通过')
+    # JSON reports must not serialize infinity for an all-winning sample.
+    if summary['profitFactor'] == math.inf:
+        summary['profitFactor'] = None
+        summary['noLosses'] = True
+    return {'passes': not gaps, 'gaps': list(dict.fromkeys(gaps)), 'summary': summary,
+            'pbo': pbo_value, 'experimentId': evidence.get('experimentId')}
+
+
 def module_summary(samples, n_trials: int = 1):
     """Out-of-sample nets for one module. None when the purged test fold is empty."""
     usable = [sample for sample in samples or [] if sample.get("module") and sample.get("netPct") is not None
@@ -341,9 +392,9 @@ class Pipeline:
             self._save(module, "SHADOW", now_ms, 0, {"enteredFrom": "RESEARCH", "promotion": decision})
         return {"module": module, "stage": "SHADOW", "entered": True, "promotion": decision}
 
-    def note(self, module: str, now_ms: int) -> None:
+    def note(self, module: str, now_ms: int, candidate_id: str = None) -> None:
         """Count a candidate seen while the module is in its shadow window."""
-        if module not in MODULES:
+        if module not in MODULES or not candidate_id:
             return
         with self.ledger.lock, self.ledger.store.db:
             row = self._row(module)
@@ -355,15 +406,22 @@ class Pipeline:
                 report = json.loads(row["report_json"] or "{}")
             except json.JSONDecodeError:
                 report = {}
-            self._save(module, "SHADOW", row["stage_started_ms"], int(row["records"]) + 1, report)
+            self.ledger.store.db.execute(
+                'INSERT OR IGNORE INTO release_candidates VALUES(?,?,?)',
+                (module, row['stage_started_ms'], candidate_id))
+            count = self.ledger.store.db.execute(
+                'SELECT count(*) FROM release_candidates WHERE module=? AND stage_started_ms=?',
+                (module, row['stage_started_ms'])).fetchone()[0]
+            self._save(module, "SHADOW", row["stage_started_ms"], count, report)
 
     def _trades(self, module: str, started: int) -> list:
         rows = self.ledger._all(
-            """SELECT l.net_pct AS net_pct, l.payload AS payload, p.closed_ms AS closed_ms
+            """SELECT l.net_pct AS net_pct, l.payload AS payload, p.closed_ms AS closed_ms,
+                      p.opened_ms AS opened_ms, p.candidate_id AS candidate_id
                FROM labels l
                JOIN shadow_positions p ON p.id = l.position_id
                JOIN candidates c ON c.id = p.candidate_id
-               WHERE c.module=? AND p.kind='SHADOW' AND p.state='CLOSED' AND p.closed_ms>=?
+               WHERE c.module=? AND p.kind='SHADOW' AND p.state='CLOSED' AND p.opened_ms>=?
                ORDER BY p.closed_ms""",
             (module, int(started)))
         trades = []
@@ -372,10 +430,12 @@ class Pipeline:
                 body = json.loads(row["payload"] or "{}")
             except json.JSONDecodeError:
                 body = {}
-            trades.append({"netPct": row["net_pct"], "r": body.get("r"), "closedMs": row["closed_ms"]})
+            trades.append({"netPct": row["net_pct"], "r": body.get("r"), "closedMs": row["closed_ms"],
+                           "openedMs": row['opened_ms'], "candidateId": row['candidate_id'],
+                           "eligibleForValidation": body.get('eligibleForValidation') is True})
         return trades
 
-    def tick(self, module: str, now_ms: int, trades=None) -> dict:
+    def tick(self, module: str, now_ms: int, trades=None, evidence=None) -> dict:
         """Advance the clock. Shadow completion is the first promotions write for that module."""
         if module not in MODULES:
             return {"module": module, "stage": "RESEARCH", "changed": False}
@@ -391,15 +451,26 @@ class Pipeline:
                 self._save(module, "RESEARCH", now_ms, 0, {"rolledBackFrom": stage, "reason": reason})
                 self._promote(module, "ROLLBACK", now_ms, {"from": stage, "reason": reason})
                 return {"module": module, "stage": "RESEARCH", "changed": True, "action": "ROLLBACK", "reason": reason}
+            duration = V2_SHADOW_MS if stage == 'SHADOW' else V2_TRIAL_MS if stage == 'TRIAL' else None
+            if duration is not None and int(now_ms)-started >= duration:
+                review = stage_review(module, stage, started, int(now_ms), book, evidence)
+                if not review['passes']:
+                    report = json.loads(row['report_json'] or '{}')
+                    report['promotion'] = review
+                    self._save(module, stage, started, row['records'], report)
+                    return {'module': module, 'stage': stage, 'changed': False,
+                            'reason': '阶段到期，验证证据不足或未通过', 'review': review}
             if stage == "SHADOW" and int(now_ms) - started >= V2_SHADOW_MS:
                 if int(row["records"]) < 1:
                     return {"module": module, "stage": "SHADOW", "changed": False, "reason": "影子期已满但没有记录"}
                 report = {"from": "SHADOW", "records": int(row["records"]), "shadowMs": int(now_ms) - started}
+                report['review'] = review
                 self._save(module, "TRIAL", now_ms, 0, report)
                 self._promote(module, "SHADOW_COMPLETE", now_ms, report)
                 return {"module": module, "stage": "TRIAL", "changed": True, "action": "SHADOW_COMPLETE"}
             if stage == "TRIAL" and int(now_ms) - started >= V2_TRIAL_MS:
                 report = {"from": "TRIAL", "trialMs": int(now_ms) - started}
+                report['review'] = review
                 self._save(module, "LIVE", now_ms, 0, report)
                 self._promote(module, "TRIAL_COMPLETE", now_ms, report)
                 return {"module": module, "stage": "LIVE", "changed": True, "action": "TRIAL_COMPLETE"}

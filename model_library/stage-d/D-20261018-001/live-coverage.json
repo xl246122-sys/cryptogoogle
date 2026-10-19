@@ -1,0 +1,86 @@
+{
+  "atMs": 1792298791440,
+  "database": "/opt/shotcrypto/model_library/research.sqlite3",
+  "quickCheck": "ok",
+  "coverage": {
+    "1m": {
+      "count": 314,
+      "startMs": 1792279920000,
+      "endMs": 1792298700000,
+      "internalMissing": 0,
+      "invalid": 0,
+      "contentSha256": "4eb2c1a1e955be8c8431f4df1079f3128054266f68ea4921ed8293da48fcef06",
+      "tailMissing": 0
+    },
+    "5m": {
+      "count": 303,
+      "startMs": 1792207800000,
+      "endMs": 1792298400000,
+      "internalMissing": 0,
+      "invalid": 0,
+      "contentSha256": "4a01acc7d4fd4bcbd99e00002cbf1d629dc3b957597a071eca3a8373beab2b61",
+      "tailMissing": 0
+    },
+    "15m": {
+      "count": 301,
+      "startMs": 1792027800000,
+      "endMs": 1792297800000,
+      "internalMissing": 0,
+      "invalid": 0,
+      "contentSha256": "1ee4a48d530f5c74097221618f78c72f89d3f4650045357ca9dbd292dfbd0a51",
+      "tailMissing": 0
+    },
+    "1h": {
+      "count": 300,
+      "startMs": 1791216000000,
+      "endMs": 1792292400000,
+      "internalMissing": 0,
+      "invalid": 0,
+      "contentSha256": "1c528e0f18709a9778227e457159c97ff33479f4ad781e96b69068f4a2fd0c3c",
+      "tailMissing": 0
+    },
+    "4h": {
+      "count": 300,
+      "startMs": 1787976000000,
+      "endMs": 1792281600000,
+      "internalMissing": 0,
+      "invalid": 0,
+      "contentSha256": "239cbef520eec51c89a337b4376b08b5e60052e5771c4344298059a9cec5ad01",
+      "tailMissing": 0
+    },
+    "1d": {
+      "count": 300,
+      "startMs": 1766361600000,
+      "endMs": 1792195200000,
+      "internalMissing": 0,
+      "invalid": 0,
+      "contentSha256": "059160af5cb9b71d5d59e208648d83c196e23c84a2e16d558edf207f20957c8c",
+      "tailMissing": 0
+    }
+  },
+  "counts": {
+    "candidates": 0,
+    "shadow_positions": 0,
+    "labels": 0,
+    "real_fills": 0,
+    "promotions": 0
+  },
+  "releaseStages": [],
+  "derivatives": {
+    "funding_rates": {
+      "count": 22,
+      "startMs": 1791676800007,
+      "endMs": 1792281600000
+    },
+    "open_interest": {
+      "count": 737,
+      "startMs": 1792077900000,
+      "endMs": 1792298700000
+    },
+    "taker_ratio": {
+      "count": 736,
+      "startMs": 1792077600000,
+      "endMs": 1792298100000
+    }
+  }
+}

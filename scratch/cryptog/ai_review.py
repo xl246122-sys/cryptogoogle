@@ -64,7 +64,7 @@ def parse_review(raw) -> dict | None:
     confidence = raw.get("confidence")
     if verdict not in VERDICTS or not isinstance(tags, list) or any(tag not in TAGS for tag in tags):
         return None
-    if not isinstance(note, str) or len(note) > 40 or PRICE_RUN.search(note):
+    if not isinstance(note, str) or len(note) > 40 or re.search(r'[0-9０-９%％\n\r]', note) or (note and not re.search(r'[\u4e00-\u9fff]',note)):
         return None
     if confidence is not None and (isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= float(confidence) <= 1):
         return None
@@ -144,7 +144,7 @@ class ReviewLog:
             self.store.db.execute(
                 "INSERT OR REPLACE INTO ai_evaluations(id,at_ms,trigger_reason,model,provider,is_buy,confidence,scenario,payload,summary) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?)",
-                ("review:" + alert_id, at_ms, "V2_REVIEW", "deepseek-chat", "DEEPSEEK",
+                ("review:" + alert_id, at_ms, "V2_REVIEW", review.get("model") or "deepseek-chat", review.get("provider") or "DEEPSEEK",
                  0, None if review.get("confidence") is None else int(round(review["confidence"] * 100)),
                  review["verdict"], json.dumps(review, ensure_ascii=False), review.get("note") or review.get("fallback") or ""))
 

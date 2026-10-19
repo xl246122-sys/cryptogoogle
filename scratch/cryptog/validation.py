@@ -125,12 +125,16 @@ def pbo(columns: Sequence[Sequence[float]], slices: int = 8) -> Optional[float]:
     width = len(columns[0])
     if width < slices or any(len(col) != width for col in columns):
         return None
+    if any(not isinstance(v, (int, float)) or not math.isfinite(v) for col in columns for v in col):
+        return None
+    if len({tuple(col) for col in columns}) < 2:
+        return None
     size = width // slices
     if size < 2:
         return None
     groups = []
     for index in range(slices):
-        start, stop = index * size, (index + 1) * size
+        start, stop = index * width // slices, (index + 1) * width // slices
         groups.append([col[start:stop] for col in columns])
     worse = total = 0
     half = slices // 2
@@ -146,11 +150,12 @@ def pbo(columns: Sequence[Sequence[float]], slices: int = 8) -> Optional[float]:
         oos_scores = [sharpe_ratio(part) for part in oos_parts]
         if any(score is None for score in is_scores + oos_scores):
             continue
-        best = max(range(len(columns)), key=lambda i: is_scores[i])
+        winners = [i for i, score in enumerate(is_scores) if score == max(is_scores)]
         median = (len(columns) + 1) / 2.0
-        rank = 1 + sum(1 for score in oos_scores if score > oos_scores[best])
-        if rank > median:
-            worse += 1
+        for best in winners:
+            rank = 1 + sum(score > oos_scores[best] for score in oos_scores)
+            rank += (sum(score == oos_scores[best] for score in oos_scores)-1)/2
+            worse += (1 if rank > median else .5 if rank == median else 0)/len(winners)
         total += 1
     return None if total == 0 else worse / total
 
@@ -198,6 +203,17 @@ def summarize_returns(values: Sequence[float], span_ms: int, n_trials: int = 1) 
 def promotion_decision(summary: dict, n_trials: int = 1, pbo_value: Optional[float] = None) -> dict:
     """Section 9 gates. DSR applies once more than 20 configurations were tried."""
     gaps = []
+    for key in ('trades', 'expectancyPct', 'bootstrapLower95', 'winRate', 'profitFactor', 'perDay', 'dsr'):
+        value = summary.get(key)
+        if value is not None and (not isinstance(value, (int, float)) or math.isnan(value)
+                                  or (not math.isfinite(value) and not (key == 'profitFactor' and value == math.inf))):
+            gaps.append('无效统计值: ' + key)
+    if pbo_value is not None and (not isinstance(pbo_value, (int, float)) or not math.isfinite(pbo_value) or not 0 <= pbo_value <= 1):
+        gaps.append('无效 PBO')
+    if not isinstance(n_trials, int) or isinstance(n_trials, bool) or n_trials < 1:
+        gaps.append('无效试验数量')
+    if gaps:
+        return {'passes': False, 'gaps': gaps, 'nTrials': n_trials, 'pbo': None}
     trades = summary.get("trades") or 0
     if trades < V2_PROMOTE_MIN_TRADES:
         gaps.append(f"样本外交易数 {trades} < {V2_PROMOTE_MIN_TRADES}")

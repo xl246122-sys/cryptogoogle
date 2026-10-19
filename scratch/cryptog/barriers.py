@@ -18,9 +18,17 @@ def triple_barrier(bars: Sequence[dict], entry: float, stop: float, take: float,
     exit_price = entry
     exit_ms = start_ms + vertical_ms
     barrier = "VERTICAL"
+    uncertain = False
     for bar in bars:
         if int(bar["close_time"]) < start_ms:
             continue
+        end = int(bar["close_time"]) + 1
+        if int(bar["time"]) < start_ms:
+            uncertain = True
+        if end > start_ms + vertical_ms:
+            uncertain = True
+            exit_ms = start_ms + vertical_ms
+            break
         mfe = max(mfe, (bar["high"] / entry - 1) * 100)
         mae = min(mae, (bar["low"] / entry - 1) * 100)
         end = int(bar["close_time"]) + 1
@@ -42,6 +50,8 @@ def triple_barrier(bars: Sequence[dict], entry: float, stop: float, take: float,
         "barrier": barrier, "entry": entry, "exit": exit_price, "exitMs": exit_ms,
         "grossPct": gross, "netPct": net, "mfePct": mfe, "maePct": mae,
         "holdMinutes": max(0, (exit_ms - start_ms) / 60_000),
+        "pathStatus": "PATH_UNCERTAIN" if uncertain else "BAR_CONSERVATIVE",
+        "eligibleForValidation": not uncertain,
     }
 
 
@@ -52,12 +62,14 @@ def label_v2(signal: dict, path: Sequence[dict], m15: Sequence[dict]) -> dict:
     if state["phase"] != "CLOSED":
         last = [bar for bar in path if int(bar["time"]) >= state["fromBar"]]
         if last and state["remaining"] > 0:
-            from .v2_tracker import _close, _leg
+            from .v2_tracker import _close, _leg, _uncertain
+            _uncertain(state, "SAMPLE_END")
             end = int(last[-1]["close_time"]) + 1
             _leg(state, state["remaining"], last[-1]["close"], end, "SAMPLE_END")
             _close(state, end, "SAMPLE_END")
     tp1_at = state.get("tp1At")
     return {
+        **state,
         "outcome": state.get("outcome"), "pnlPct": state.get("pnlPct"), "r": state.get("r"),
         "mfePct": state.get("mfePct"), "maePct": state.get("maePct"),
         "openedAt": state["openedAt"], "closedAt": state.get("closedAt"),
@@ -65,6 +77,7 @@ def label_v2(signal: dict, path: Sequence[dict], m15: Sequence[dict]) -> dict:
         "holdMinutes": None if not state.get("closedAt") else (state["closedAt"] - state["openedAt"]) / 60_000,
         "legs": state.get("legs"), "phase": state["phase"],
         "verticalMinutes": V2_MAX_HOLD_MINUTES,
+        **{k: state.get(k) for k in ("executionModelVersion", "costSnapshot", "pathStatus", "uncertaintyReasons", "eligibleForValidation", "conservativePnlPct")},
     }
 
 

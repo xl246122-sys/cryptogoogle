@@ -56,9 +56,10 @@ export interface LibraryAction {
   strategy?: string;
   note?: string;
   approximate?: boolean;
+  costSnapshot?: {costModelVersion: string; frictionPct: number; applicableAtMs: number; source?: string};
 }
 
-export interface JournalEntry { action: LibraryAction & {eventId: string}; status: 'pending' | 'acked' | 'rejected'; error?: string }
+export interface JournalEntry { syncScope?: string | null; action: LibraryAction & {eventId: string}; status: 'pending' | 'acked' | 'rejected'; error?: string }
 export function effectiveExecutionRows(rows: JournalEntry[]) {
   const accepted = rows.filter(r=>r.action.fill && r.status !== 'rejected');
   const replaced = new Set(accepted.map(r=>r.action.replacesEventId).filter(Boolean));
@@ -83,7 +84,7 @@ function persist(rows: JournalEntry[]) {
   }
   if (changed && typeof window !== 'undefined') window.dispatchEvent(new Event('library-journal-changed'));
 }
-export function libraryJournal(): JournalEntry[] {
+export function allLibraryJournal(): JournalEntry[] {
   if (!localStorage.getItem(MIGRATED_KEY)) {
     let raw = localStorage.getItem(JOURNAL_KEY);
     if (raw === null) {
@@ -117,15 +118,24 @@ export function libraryJournal(): JournalEntry[] {
   }
   return rows.sort((a,b)=>a.action.actedAtMs-b.action.actedAtMs || a.action.eventId.localeCompare(b.action.eventId));
 }
+function currentScope(): string | null { try { return connection().cacheScope || null; } catch { return null; } }
+export function libraryJournal(): JournalEntry[] { return allLibraryJournal().filter(row=>(row.syncScope || null)===currentScope()); }
+export function unboundJournalCount(): number { return allLibraryJournal().filter(row=>!row.syncScope).length; }
+export function bindUnassignedJournal(): void {
+  const scope=currentScope(); if(!scope)throw new Error('请先配置服务器连接');
+  persist(allLibraryJournal().map(row=>row.syncScope?row:{...row,syncScope:scope}));
+}
+
 export function rememberAction(action: LibraryAction): string {
   const rows = libraryJournal();
   const eventId = action.eventId || newEventId();
-  const existing = rows.find(row => row.action.eventId === eventId);
+  const existing = allLibraryJournal().find(row => row.action.eventId === eventId);
   if (existing) {
+    if (existing.syncScope !== currentScope()) throw new Error('该记录属于其他连接，不能转移');
     if (JSON.stringify(existing.action) !== JSON.stringify({...action, eventId})) throw new Error('记录编号已用于不同内容');
     return eventId;
   }
-  rows.push({action: {...action, eventId}, status: 'pending'});
+  rows.push({action: {...action, eventId}, status: 'pending', syncScope:currentScope()});
   persist(rows);
   void flushLibraryQueue();
   return eventId;
@@ -135,23 +145,26 @@ export function flushLibraryQueue(): Promise<void> {
   flushing = (async () => {
     // One writer across tabs where Web Locks is available, one in-flight request per app.
     const drain = async () => {
-      if (!libraryJournal().some(row=>row.status==='pending')) return;
+      const destination=connection();
+      const scope=destination.cacheScope;
+      if (!scope || !libraryJournal().some(row=>row.status==='pending' && row.syncScope===scope)) return;
       const capabilityController = new AbortController();
       const capabilityTimer = setTimeout(()=>capabilityController.abort(),8000);
       try {
-        const response = await fetch(`${connection().url}/model-library/capabilities`, {
-          headers:{'X-Library-Token':connection().token}, signal:capabilityController.signal,
+        const response = await fetch(`${destination.url}/model-library/capabilities`, {
+          headers:{'X-Library-Token':destination.token}, signal:capabilityController.signal,
         });
         if (!response.ok || (await response.json()).userActionProtocol !== 2) return;
       } catch { return; }
       finally { clearTimeout(capabilityTimer); }
-      const initial = libraryJournal().filter(row => row.status === 'pending');
+      const initial = allLibraryJournal().filter(row => row.status === 'pending' && row.syncScope===scope);
       for (const {action} of initial) {
+        if(currentScope()!==scope)return;
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 8000);
         try {
-          const res = await fetch(`${connection().url}/model-library/action`, {
-            method: 'POST', headers: {'Content-Type': 'application/json', 'X-Library-Token': connection().token},
+          const res = await fetch(`${destination.url}/model-library/action`, {
+            method: 'POST', headers: {'Content-Type': 'application/json', 'X-Library-Token': destination.token},
             body: JSON.stringify(action), signal: controller.signal,
           });
           const body = await res.json();
@@ -159,7 +172,7 @@ export function flushLibraryQueue(): Promise<void> {
           const rejected = res.status === 400 && body.eventId === action.eventId;
           if (acked || rejected) {
             // Re-read: actions appended while fetch was pending must survive.
-            persist(libraryJournal().map(row => row.action.eventId === action.eventId
+            persist(allLibraryJournal().map(row => row.action.eventId === action.eventId
               ? {...row, status: acked ? 'acked' : 'rejected', error: rejected ? String(body.error || '校验失败') : undefined} : row));
           }
         } catch { /* Keep the durable pending event, including on lost acknowledgments. */ }

@@ -1,0 +1,50 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {parseWaveMessage,waveStatus} from '../src/services/waveState';
+import {WaveMessageDetails} from '../src/components/WaveMessageDetails';
+import {parseCloudSignal} from '../src/services/signalValidity';
+import {paperSummary} from '../src/services/quickPaper';
+const data=new Map<string,string>();
+Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(k:string)=>data.get(k)||null,
+ setItem:(k:string,v:string)=>data.set(k,v),removeItem:(k:string)=>data.delete(k)}});
+Object.assign(globalThis,{window:{dispatchEvent:()=>true},CustomEvent:class {constructor(public type:string,public detail:any){}}});
+const inbox=await import('../src/services/inbox');
+const [down,exhaustion,confirmed,holding,invalidated]=JSON.parse(readFileSync('tests/fixtures/wave_contract.json','utf8'));
+for(const p of [down,exhaustion,confirmed,holding,invalidated]) {
+ assert.ok(parseWaveMessage(p),'Backend fixture must parse in APP');
+ assert.equal(parseCloudSignal({...p,signalType:'BUY'}),null,'Research cannot become a BUY via changed signalType');
+}
+const fcm=Object.fromEntries(Object.entries(confirmed).map(([k,v])=>[k,typeof v==='object'?JSON.stringify(v):String(v)]));
+assert.ok(parseWaveMessage(fcm),'FCM string fields decode');
+assert.equal(parseWaveMessage({...confirmed,tradeEligible:true}),null);
+assert.equal(parseWaveMessage({...confirmed,featureAsOfTime:confirmed.decisionTime+1}),null);
+assert.equal(parseWaveMessage({...confirmed,plan:{...confirmed.plan,stop:105}}),null);
+inbox.focusMessage(down.eventId);
+assert.equal(inbox.getAndClearPendingFocus(),null,'Cold launch focus retained until message arrives');
+inbox.ingestMessage(down);
+assert.equal(inbox.getAndClearPendingFocus(),down.eventId);
+inbox.ingestMessage(down);assert.equal(inbox.messages().length,1);
+inbox.readMessage(down.eventId);assert.equal(inbox.messages()[0].read,true);
+inbox.ingestMessage(exhaustion);assert.equal(inbox.messages()[0].read,false);
+inbox.ingestMessage(down);assert.equal(inbox.messages()[0].extra.revision,2,'Old revision cannot restore old state');
+inbox.ingestMessage(confirmed);assert.equal(inbox.messages()[0].revisions?.length,2);
+assert.equal(waveStatus(parseWaveMessage(confirmed)!,confirmed.expiresAt),'已过期');
+inbox.ingestMessage(holding);
+inbox.autoClearMessages(Date.now()+365*86400000);assert.equal(inbox.messages().length,2);
+inbox.clearAllMessages();assert.equal(inbox.messages().length,2,'Audit/position messages survive manual general cleanup');
+inbox.markAllAsRead();inbox.clearReadMessages();assert.equal(inbox.messages().length,2);
+inbox.deleteMessage(holding.eventId);assert.equal(inbox.messages().length,2);
+inbox.ingestMessage(invalidated);assert.equal(waveStatus(inbox.messages().find(m=>m.id===down.eventId)!.extra),'已撤销');
+inbox.ingestMessage(confirmed);assert.equal(inbox.messages().find(m=>m.id===down.eventId)!.extra.revision,4);
+let html=renderToStaticMarkup(<WaveMessageDetails data={down}/>);
+assert.ok(html.includes('尚未形成'));assert.ok(!html.includes('计划参考区间'));
+html=renderToStaticMarkup(<WaveMessageDetails data={confirmed} now={confirmed.expiresAt}/>);
+assert.ok(html.includes('已过期'));assert.ok(html.includes('不是保证收益'));assert.ok(!html.includes('<button'));
+html=renderToStaticMarkup(<WaveMessageDetails data={holding}/>);
+assert.ok(html.includes('提醒不会自动卖出'));assert.ok(html.includes('3.800'));
+const paperRows:any[]=[{status:'acked',action:{eventId:'b',strategy:'QUICK_PAPER_V2',recordType:'SIM_BUY',entryPrice:100,positionSize:500,costSnapshot:{frictionPct:.24}}},
+ {status:'acked',action:{eventId:'s',strategy:'QUICK_PAPER_V2',recordType:'USER_CLOSE',entryPrice:100,exitPrice:101,positionSize:250}}];
+const paper=paperSummary(paperRows);assert.equal(paper.quantity,2.5);assert.equal(paper.cost,250);assert.ok(Math.abs(paper.realized-1.9)<1e-9);
+console.log('Wave integration: backend/FCM contract, no BUY conversion, revisions, cold-focus, persistence, expiry, position detail and paper-cost parity passed.');

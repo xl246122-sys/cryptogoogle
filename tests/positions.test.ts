@@ -18,7 +18,7 @@ test('unsupported server and malformed inventory/notices cannot look managed',()
 });
 test('lost or mismatched review ACK is not shown as success',async()=>{
   const oldFetch=globalThis.fetch;const oldStorage=globalThis.localStorage;
-  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:()=>JSON.stringify({url:'https://example.test',token:'a'.repeat(32)})}});
+  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:()=>JSON.stringify({url:'https://example.test',token:'a'.repeat(32),cacheScope:'position-test'})}});
   try {
     globalThis.fetch=async()=>({ok:true,json:async()=>({ok:true,noticeId:'wrong',kind:'USER_REVIEWED',serverReceivedAtMs:now})}) as Response;
     await assert.rejects(reviewNotice('exit-a'));
@@ -27,4 +27,10 @@ test('lost or mismatched review ACK is not shown as success',async()=>{
     globalThis.fetch=async()=>({ok:true,json:async()=>({ok:true,noticeId:'exit-a',kind:'USER_REVIEWED',serverReceivedAtMs:now})}) as Response;
     assert.equal(await reviewNotice('exit-a'),now);
   } finally {globalThis.fetch=oldFetch;Object.defineProperty(globalThis,'localStorage',{configurable:true,value:oldStorage});}
+});
+
+test('account risk rejects malformed amounts and expires manual balance independently of feed',()=>{
+ const accountRisk={source:'MANUAL_UNVERIFIED',fresh:true,coverageComplete:true,updatedMs:now-900001,knownOpenPositions:1,totalPlannedRiskUsdt:2,singleTradeRiskBudgetUsdt:2.5,equityUsdt:500};
+ assert.equal(parsePositions({...state(),accountRisk},now).accountRisk?.fresh,false);
+ assert.equal(parsePositions({...state(),accountRisk:{...accountRisk,equityUsdt:'500'}},now).accountRisk,undefined);
 });

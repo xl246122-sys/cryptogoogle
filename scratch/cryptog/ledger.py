@@ -11,7 +11,7 @@ import time
 
 from .barriers import label_v2
 from .config import V2_ENGINE_VERSION, V2_FRICTION_PCT, V2_MAX_HOLD_MINUTES, V2_PAPER_NOTIONAL_USDT, V2_RULE_VERSION
-from .cost_model import calibrate
+from .cost_model import calibrate, cost_snapshot
 from .kline_store import ResearchStore
 from .v2_tracker import advance, open_state
 
@@ -66,6 +66,9 @@ CREATE TABLE IF NOT EXISTS labels(
     tp1_minutes REAL,
     created_ms INTEGER NOT NULL,
     payload TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS label_replays(
+    id TEXT PRIMARY KEY, original_label_id TEXT NOT NULL, execution_version TEXT NOT NULL,
+    created_ms INTEGER NOT NULL, payload TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS real_fills(
     fill_id TEXT PRIMARY KEY,
     position_id TEXT NOT NULL,
@@ -195,6 +198,10 @@ class Ledger:
         self.lock = threading.RLock()
         with self.lock, self.store.db:
             self.store.db.executescript(SCHEMA)
+            from .funnel import SCHEMA as FUNNEL_SCHEMA
+            self.store.db.executescript(FUNNEL_SCHEMA)
+            from .execution_sync import SCHEMA as EXECUTION_SCHEMA
+            self.store.db.executescript(EXECUTION_SCHEMA)
             self.store.db.execute(
                 "INSERT OR IGNORE INTO model_registry(version, rule_version, registered_ms, status, report_json) VALUES(?,?,?,?,?)",
                 (V2_ENGINE_VERSION, V2_RULE_VERSION, int(time.time() * 1000), "RESEARCH", None))
@@ -354,13 +361,17 @@ class Ledger:
         with self.lock:
             rows = self._all(
                 """SELECT l.net_pct AS net_pct, p.opened_ms AS opened_ms, p.closed_ms AS closed_ms,
-                          c.module AS module, c.payload AS candidate_payload
+                          c.module AS module, c.payload AS candidate_payload, l.payload AS label_payload
                    FROM labels l
                    JOIN shadow_positions p ON p.id = l.position_id
                    LEFT JOIN candidates c ON c.id = p.candidate_id
-                   WHERE p.kind IN ('SHADOW','SYSTEM') AND l.net_pct IS NOT NULL""")
+                   WHERE p.kind IN ('SHADOW','SYSTEM') AND l.net_pct IS NOT NULL
+                     AND (p.real_position_id IS NULL OR p.real_position_id NOT IN (SELECT position_id FROM fill_corrections))""")
         samples = []
         for row in rows:
+            label = json.loads(row["label_payload"])
+            if label.get("eligibleForValidation") is not True:
+                continue
             try:
                 signal = json.loads(row["candidate_payload"]) if row.get("candidate_payload") else {}
             except (TypeError, json.JSONDecodeError):
@@ -397,7 +408,7 @@ class Ledger:
         return self._candidate_signal(row["id"]), row["id"], False
 
     def _insert_fill(self, fill: dict, signal_id, paper_id: str, subjective: bool) -> None:
-        body = {"fill": fill, "signal_id": signal_id, "paper_twin_id": paper_id, "subjective": subjective}
+        body = {"fill": fill, "signal_id": signal_id, "paper_twin_id": paper_id, "subjective": subjective, "availableAtMs": int(time.time() * 1000)}
         self.store.db.execute(
             """INSERT OR IGNORE INTO real_fills(fill_id, position_id, side, price, quantity, executed_at_ms,
                signal_id, paper_twin_id, subjective, payload) VALUES(?,?,?,?,?,?,?,?,?,?)""",
@@ -472,12 +483,12 @@ class Ledger:
             }
             self.store.db.execute("UPDATE real_fills SET payload=? WHERE fill_id=?",
                                   (_dump({"fill": fill, "signal_id": linked, "paper_twin_id": paper_id,
-                                          "subjective": subjective, "result": result}), fill["fillId"]))
+                                          "subjective": subjective, "result": result, "availableAtMs": int(time.time() * 1000)}), fill["fillId"]))
             return result
 
     def _weighted(self, position_id: str, side: str):
         rows = self.store.db.execute(
-            "SELECT price, quantity FROM real_fills WHERE position_id=? AND side=?", (position_id, side)).fetchall()
+            "SELECT price, quantity FROM real_fills WHERE position_id=? AND side=? AND fill_id NOT IN (SELECT old_fill_id FROM fill_corrections)", (position_id, side)).fetchall()
         total = weighted = 0.0
         for price, quantity in rows:
             qty = float(quantity)
@@ -542,7 +553,7 @@ class Ledger:
         self.store.db.execute(
             """INSERT OR IGNORE INTO labels(id, position_id, candidate_id, barrier, label, net_pct, mfe_pct, mae_pct,
                tp1_minutes, created_ms, payload) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-            (label_id, position_id, candidate_id, outcome, _label_code(outcome, net), net, mfe, mae, tp1_minutes,
+            (label_id, position_id, candidate_id, outcome, 0 if payload.get("pathStatus") == "PATH_UNCERTAIN" else _label_code(outcome, net), net, mfe, mae, tp1_minutes,
              int(at_ms), _dump(payload)))
         return label_id
 
@@ -551,7 +562,7 @@ class Ledger:
         return {
             "alert_id": state.get("id") or position["id"], "module": state.get("module"),
             "entry_price": state["entry"], "stop_loss": state["stop"], "target_tp1": state["tp1"],
-            "target_tp2": state["tp2"], "timestamp": state["openedAt"],
+            "target_tp2": state["tp2"], "timestamp": state["openedAt"], "cost_snapshot": state.get("costSnapshot"),
             "invalidation_price": state.get("invalidation", state["stop"]), "reclaim_price": state.get("reclaim"),
         }
 
@@ -566,7 +577,7 @@ class Ledger:
             labeled.get("mfePct"), labeled.get("maePct"), labeled.get("tp1Minutes"), labeled.get("closedAt") or 0,
             {"outcome": labeled.get("outcome"), "pnlPct": labeled.get("pnlPct"), "r": labeled.get("r"),
              "mfePct": labeled.get("mfePct"), "maePct": labeled.get("maePct"),
-             "tp1Minutes": labeled.get("tp1Minutes"), "legs": legs, "source": "v2"})
+             "tp1Minutes": labeled.get("tp1Minutes"), "legs": legs, "source": "v2", **{k: labeled.get(k) for k in ("executionModelVersion", "costSnapshot", "pathStatus", "uncertaintyReasons", "eligibleForValidation", "conservativePnlPct")}})
 
     def _close_tracked(self, position: dict, bars, m15) -> dict:
         state = position["state_payload"]
@@ -579,12 +590,14 @@ class Ledger:
             ("CLOSED" if closed else "OPEN", state.get("closedAt"), _exit_price(state), state.get("outcome"),
              _dump(state), position["id"]))
         if closed:
+            from .funnel import stage
+            stage(self,position.get('candidate_id') or position['id'],state.get('closedAt') or 0,'SETTLED',state.get('outcome'),{'pathStatus':state.get('pathStatus'),'eligibleForValidation':state.get('eligibleForValidation')})
             self._write_label(
                 position["id"], position.get("candidate_id"), state.get("outcome"), state.get("pnlPct"),
                 state.get("mfePct"), state.get("maePct"), _tp1_minutes(state), state.get("closedAt") or 0,
                 {"outcome": state.get("outcome"), "pnlPct": state.get("pnlPct"), "r": state.get("r"),
                  "mfePct": state.get("mfePct"), "maePct": state.get("maePct"),
-                 "tp1Minutes": _tp1_minutes(state), "legs": state.get("legs"), "source": "v2"})
+                 "tp1Minutes": _tp1_minutes(state), "legs": state.get("legs"), "source": "v2", **{k: state.get(k) for k in ("executionModelVersion", "costSnapshot", "pathStatus", "uncertaintyReasons", "eligibleForValidation", "conservativePnlPct")}})
         return state
 
     def record_sell(self, fill: dict, bars_1m=None, bars_15m=None, inventory_closed: bool = True) -> dict:
@@ -612,10 +625,16 @@ class Ledger:
             at = int(fill["executedAtMs"])
             entry = self._weighted(fill["positionId"], "BUY") or float(paper["entry_price"])
             exit_price = self._weighted(fill["positionId"], "SELL") or price
-            user_net = (exit_price / entry - 1) * 100 - V2_FRICTION_PCT
+            from .execution_accounting import execution_summary
+            fills = [json.loads(r[0])["fill"] for r in self.store.db.execute("SELECT payload FROM real_fills WHERE position_id=? AND fill_id NOT IN (SELECT old_fill_id FROM fill_corrections)", (fill["positionId"],))]
+            summary = execution_summary(fills)
+            user_net = summary["wholeTradeNetPct"]
+            if not summary["closed"]:
+                return {"ok": True, "closed": False, "labelId": None, "executionSummary": summary}
+            user_net = round(user_net, 4)
             payload = json.loads(paper["payload"])
             payload.update(entry=entry, exit=exit_price, userNetPct=round(user_net, 4), closedAt=at,
-                           notionalUsdt=V2_PAPER_NOTIONAL_USDT)
+                           notionalUsdt=V2_PAPER_NOTIONAL_USDT, executionSummary=summary)
             self.store.db.execute(
                 """UPDATE shadow_positions SET state='CLOSED', closed_ms=?, entry_price=?, exit_price=?, exit_reason='USER_EXIT',
                    notional_usdt=?, payload=? WHERE id=?""",
@@ -661,14 +680,17 @@ class Ledger:
                     closed.append({"id": position_id, "outcome": state.get("outcome"), "pnlPct": state.get("pnlPct")})
         return closed
 
-    def cost_fills(self) -> list:
+    def cost_fills(self, at_ms=None) -> list:
         """Real fills that carry a reference price, oldest first. Extra keys are ignored by calibrate."""
         with self.lock:
             rows = self.store.db.execute(
-                "SELECT executed_at_ms, payload FROM real_fills ORDER BY executed_at_ms, fill_id").fetchall()
+                "SELECT executed_at_ms, payload FROM real_fills WHERE fill_id NOT IN (SELECT old_fill_id FROM fill_corrections) ORDER BY executed_at_ms, fill_id").fetchall()
         sample = []
         for executed_at_ms, raw in rows:
-            fill = json.loads(raw).get("fill") or {}
+            body = json.loads(raw)
+            if at_ms is not None and (body.get("availableAtMs") is None or body["availableAtMs"] > at_ms or executed_at_ms > at_ms):
+                continue
+            fill = body.get("fill") or {}
             if not fill.get("referencePrice"):
                 continue
             notional = float(fill["price"]) * float(fill["quantity"])
@@ -691,6 +713,11 @@ class Ledger:
                 item["fee_pct"] = fee_pct
             sample.append(item)
         return sample
+
+    def working_cost(self, at_ms: int) -> dict:
+        measured = calibrate(self.cost_fills(at_ms))
+        measured["availableAtMs"] = at_ms
+        return cost_snapshot(at_ms, measured)
 
     def measured_cost(self, bnb_discount: bool = False) -> dict:
         """Slippage and fee sample. The working cost cannot go under the published floor."""
@@ -730,6 +757,33 @@ class Ledger:
             except json.JSONDecodeError:
                 row["report"] = {}
         return rows
+
+    def replay_label(self, position_id: str, path, m15, at_ms: int) -> dict:
+        import hashlib
+        with self.lock, self.store.db:
+            original = self.label_for(position_id)
+            position = self._position(position_id)
+            if not original or not position:
+                raise ValueError("ORIGINAL_LABEL_MISSING")
+            signal = self._signal_from_position(position)
+            result = label_v2(signal, path, m15)
+            body = {"originalLabelId": original["id"], "result": result,
+                    "inputHash": hashlib.sha256(_dump([signal, path, m15]).encode()).hexdigest()}
+            replay_id = "replay:" + hashlib.sha256(_dump(body).encode()).hexdigest()
+            self.store.db.execute("INSERT OR IGNORE INTO label_replays VALUES(?,?,?,?,?)",
+                                  (replay_id, original["id"], "settlement-v2.1", at_ms, _dump(body)))
+            return dict(body, id=replay_id)
+
+    def label_quality(self) -> dict:
+        with self.lock:
+            rows = [json.loads(r[0]) for r in self.store.db.execute("SELECT payload FROM labels")]
+        uncertain = [r for r in rows if r.get("pathStatus") == "PATH_UNCERTAIN"]
+        legacy = [r for r in rows if r.get("source") == "v2" and r.get("executionModelVersion") != "settlement-v2.1"]
+        values = [(r["conservativePnlPct"] if r.get("conservativePnlPct") is not None else r["pnlPct"]) for r in rows if r.get("executionModelVersion") == "settlement-v2.1" and r.get("pnlPct") is not None]
+        return {"total": len(rows), "uncertainCount": len(uncertain), "legacyCount": len(legacy),
+                "uncertainFraction": len(uncertain)/len(rows) if rows else None,
+                "conservativeMeanPct": sum(values)/len(values) if values else None,
+                "eligibleCount": sum(r.get("eligibleForValidation") is True for r in rows)}
 
     def counts(self) -> dict:
         with self.lock:

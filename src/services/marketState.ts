@@ -64,6 +64,7 @@ export function parseMarketState(value: any, now = Date.now()): MacroTrendAnalys
   const shadow = value.mode === 'SHADOW';
   return {
     stateSource: 'SERVER',
+    costSnapshot: s.costSnapshot && Number.isFinite(s.costSnapshot.frictionPct) && s.costSnapshot.frictionPct >= .24 ? s.costSnapshot : undefined,
     hourlyTrend: m.trend,
     isStronglyBearish: m.is_strongly_bearish === true,
     hourlyMa20: Number.isFinite(m.liveMa20) && m.liveMa20 > 0 ? m.liveMa20 : m.ma20,
@@ -100,6 +101,7 @@ export function parseMarketState(value: any, now = Date.now()): MacroTrendAnalys
     }`,
     biasZh: `${s.engineVersion} / ${s.ruleVersion} · ${new Date(s.atMs).toLocaleTimeString()} · 收盘结构；目标以具体信号为准`,
     layers: readLayers(s.shortHorizonV2),
+    decisionContext: readDecisionContext(value.decisionContext, s.atMs),
     levels: readLevels(s.shortHorizonV2),
     watchCandidates: readWatch(s),
     lab: readLab(value.evolution, value.continuity),
@@ -109,6 +111,14 @@ export function parseMarketState(value: any, now = Date.now()): MacroTrendAnalys
 }
 
 const LAYER_NAMES: Record<string, string> = { UP: '多头', ABOVE_99: '多头回调', BELOW_99: '空头反弹', DOWN: '空头' };
+
+export function readDecisionContext(raw:any, snapshotAt:number):MacroTrendAnalysis['decisionContext'] {
+  if(!raw || raw.atMs!==snapshotAt || !['d1','h4','h1'].every(tf=>
+    Number.isFinite(raw.frames?.[tf]?.closeTime) && raw.frames[tf].closeTime>0 && raw.frames[tf].closeTime<snapshotAt && LAYER_NAMES[raw.frames[tf].state]) ||
+    !['S1','S2','S3','S4'].every(m=>typeof raw.gates?.[m]==='boolean'))return undefined;
+  return {atMs:raw.atMs,frames:Object.fromEntries(['d1','h4','h1'].map(tf=>[tf,{closeTime:raw.frames[tf].closeTime,state:LAYER_NAMES[raw.frames[tf].state]}])),
+    gates:raw.gates,reasons:Array.isArray(raw.reasons)?raw.reasons.filter((s:unknown)=>typeof s==='string'):[]};
+}
 
 function readLayers(view: any): MacroTrendAnalysis['layers'] {
   const env = view?.displayEnv?.states ? view.displayEnv : view?.env;

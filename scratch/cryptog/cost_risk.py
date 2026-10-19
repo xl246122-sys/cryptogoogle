@@ -3,6 +3,7 @@ import math
 from typing import Dict, List, Optional, Tuple
 from .clock import clock as time
 from .config import *
+from .cost_model import signal_cost
 
 
 def entry_contract(entry: float, tp1: float, stop: float, confirmation_ms: int,
@@ -57,7 +58,7 @@ def entry_is_valid(sig: dict, quote: Optional[dict], now_ms: Optional[int] = Non
         age = now_ms - int(quote["timestamp"])
         level = sig.get("breakout_level")
         v2 = sig.get("rule_version") == "short-horizon-v2"
-        friction = V2_FRICTION_PCT if v2 else FRICTION_PCT
+        friction = signal_cost(sig)["frictionPct"] if v2 else FRICTION_PCT
         min_net = sig.get("min_net_tp1", V2_MIN_NET_TP1 if v2 else MIN_NET_TP1)
         min_rr = sig.get("min_net_rr", V2_MIN_NET_RR if v2 else MIN_NET_RR)
         net = (sig["target_tp1"] / price - 1) * 100 - friction

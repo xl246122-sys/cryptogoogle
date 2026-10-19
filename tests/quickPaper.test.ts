@@ -12,7 +12,7 @@ test('fixed buys, partial sale, remaining liquidation and cost accounting',()=>{
  add('SELL',50,4000);
  assert.equal(paperSummary(rows).quantity,0);
  assert.throws(()=>add('SELL',50,5000));
- assert.ok(Math.abs(paperSummary(rows).realized-(-200.99))<1e-8);
+ assert.ok(Math.abs(paperSummary(rows).realized-(-202.4))<1e-8);
 });
 test('stale invalid and future quote are rejected',()=>{
  for(const [price,at,now] of [[0,1,1],[NaN,1,1],[100,1,10002],[100,2,1]])assert.throws(()=>paperAction('BUY',price,at,now,[],'paper-test'));

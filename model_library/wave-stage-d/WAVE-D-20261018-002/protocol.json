@@ -1,0 +1,301 @@
+{
+  "experimentId": "WAVE-D-20261018-002",
+  "status": "IMPLEMENTATION_REGISTERED_BEFORE_UNSEEN_WINDOW",
+  "frozenAtMs": 1792318092254,
+  "groups": {
+    "B-R00": [
+      "D0",
+      "C0",
+      "E0"
+    ],
+    "B-R01": [
+      "D1",
+      "C0",
+      "E0"
+    ],
+    "B-R02": [
+      "D2",
+      "C0",
+      "E0"
+    ],
+    "B-R03": [
+      "D0",
+      "C1",
+      "E0"
+    ],
+    "B-R04": [
+      "D0",
+      "C2",
+      "E0"
+    ],
+    "B-R05": [
+      "D0",
+      "C0",
+      "E1"
+    ],
+    "B-R06": [
+      "D0",
+      "C0",
+      "E2"
+    ]
+  },
+  "scenarios": [
+    {
+      "costPct": 0.24,
+      "delayMinutes": 0
+    },
+    {
+      "costPct": 0.24,
+      "delayMinutes": 1
+    },
+    {
+      "costPct": 0.24,
+      "delayMinutes": 2
+    },
+    {
+      "costPct": 0.4,
+      "delayMinutes": 0
+    },
+    {
+      "costPct": 0.4,
+      "delayMinutes": 1
+    },
+    {
+      "costPct": 0.4,
+      "delayMinutes": 2
+    },
+    {
+      "costPct": 0.6,
+      "delayMinutes": 0
+    },
+    {
+      "costPct": 0.6,
+      "delayMinutes": 1
+    },
+    {
+      "costPct": 0.6,
+      "delayMinutes": 2
+    }
+  ],
+  "primaryScenario": {
+    "costPct": 0.24,
+    "delayMinutes": 1
+  },
+  "prospective": {
+    "startMs": 1792368000000,
+    "endExclusiveMs": 1802908800000,
+    "trainingLabelsMustEndByMs": 1792346400000,
+    "boundaryTimezone": "UTC",
+    "historicalViewedData": "DIAGNOSTIC_ONLY",
+    "automaticPromotion": false
+  },
+  "trialHistory": {
+    "knownGroups": 7,
+    "knownScenarios": 63,
+    "completeHistoricalCount": null,
+    "pbo": null,
+    "dsr": null
+  },
+  "production": {
+    "newTradeTierEnabled": false,
+    "newPushSenderConnected": false,
+    "shadowRunning": false
+  },
+  "gates": {
+    "minTrades": 60,
+    "minMeanNetPct": 0.1,
+    "bootstrap95LowerAbove": 0,
+    "minWinRatePct": 52,
+    "minProfitFactor": 1.3,
+    "maxPboExclusive": 0.3,
+    "dsrAboveIfTrialsOver20": 0.95,
+    "frequencyPerDay": [
+      0.5,
+      6
+    ],
+    "minFirstThirdCoverageOfWavesAtLeast1_5Pct": 0.5,
+    "shadowDays": 14,
+    "trialDays": 14
+  },
+  "execution": {
+    "costFloorPct": 0.24,
+    "discountedFloorPct": 0.19,
+    "realQuotesRequired": true,
+    "actualLatencyRequired": true,
+    "missingEvidence": "EXCLUDE_FROM_TRADE_QUALIFICATION",
+    "sharedInitialUSDT": 500
+  },
+  "developmentResults": [
+    {
+      "method": "B-R00",
+      "costPct": "0.24",
+      "delayMinutes": "1",
+      "segment": "ALL90",
+      "trades": "71",
+      "winPct": "21.12676056338028",
+      "meanNetPct": "-0.2723239818094453",
+      "profitFactor": "0.30127600804105537",
+      "noLosses": "False",
+      "avgHoldMinutes": "120.78873239436619",
+      "bootstrapLower95": "-0.36789670759160253",
+      "grossMeanPct": "-0.03232398180944531",
+      "positiveThenLoss": "24",
+      "stopCount": "35",
+      "targetCount": "3",
+      "timeCount": "33",
+      "exitCount": "0",
+      "finalUSDT": "427.2555563589136",
+      "minuteCloseDrawdownPct": "-14.551430239836694"
+    },
+    {
+      "method": "B-R01",
+      "costPct": "0.24",
+      "delayMinutes": "1",
+      "segment": "ALL90",
+      "trades": "32",
+      "winPct": "34.375",
+      "meanNetPct": "-0.15981983589560933",
+      "profitFactor": "0.3786306718959162",
+      "noLosses": "False",
+      "avgHoldMinutes": "26.875",
+      "bootstrapLower95": "-0.28143703526442665",
+      "grossMeanPct": "0.08018016410439067",
+      "positiveThenLoss": "6",
+      "stopCount": "6",
+      "targetCount": "1",
+      "timeCount": "25",
+      "exitCount": "0",
+      "finalUSDT": "480.191530452781",
+      "minuteCloseDrawdownPct": "-4.219423749749374"
+    },
+    {
+      "method": "B-R02",
+      "costPct": "0.24",
+      "delayMinutes": "1",
+      "segment": "ALL90",
+      "trades": "28",
+      "winPct": "32.142857142857146",
+      "meanNetPct": "-0.18623985406311208",
+      "profitFactor": "0.3555564638591206",
+      "noLosses": "False",
+      "avgHoldMinutes": "25.75",
+      "bootstrapLower95": "-0.3135644226145509",
+      "grossMeanPct": "0.05376014593688789",
+      "positiveThenLoss": "4",
+      "stopCount": "7",
+      "targetCount": "1",
+      "timeCount": "20",
+      "exitCount": "0",
+      "finalUSDT": "479.03716440473704",
+      "minuteCloseDrawdownPct": "-4.192567119052592"
+    },
+    {
+      "method": "B-R03",
+      "costPct": "0.24",
+      "delayMinutes": "1",
+      "segment": "ALL90",
+      "trades": "46",
+      "winPct": "28.26086956521739",
+      "meanNetPct": "-0.19010905855722357",
+      "profitFactor": "0.4582431249659791",
+      "noLosses": "False",
+      "avgHoldMinutes": "169.15217391304347",
+      "bootstrapLower95": "-0.32923301815136297",
+      "grossMeanPct": "0.049890941442776414",
+      "positiveThenLoss": "14",
+      "stopCount": "20",
+      "targetCount": "3",
+      "timeCount": "23",
+      "exitCount": "0",
+      "finalUSDT": "468.4620203397337",
+      "minuteCloseDrawdownPct": "-7.483013488148316"
+    },
+    {
+      "method": "B-R04",
+      "costPct": "0.24",
+      "delayMinutes": "1",
+      "segment": "ALL90",
+      "trades": "19",
+      "winPct": "31.57894736842105",
+      "meanNetPct": "-0.1839946511612019",
+      "profitFactor": "0.49519939482323455",
+      "noLosses": "False",
+      "avgHoldMinutes": "151.89473684210526",
+      "bootstrapLower95": "-0.39891118007316534",
+      "grossMeanPct": "0.056005348838798104",
+      "positiveThenLoss": "1",
+      "stopCount": "8",
+      "targetCount": "1",
+      "timeCount": "10",
+      "exitCount": "0",
+      "finalUSDT": "483.6920940661223",
+      "minuteCloseDrawdownPct": "-3.553973621162654"
+    },
+    {
+      "method": "B-R05",
+      "costPct": "0.24",
+      "delayMinutes": "1",
+      "segment": "ALL90",
+      "trades": "78",
+      "winPct": "19.230769230769234",
+      "meanNetPct": "-0.2570630255113234",
+      "profitFactor": "0.16055850791935494",
+      "noLosses": "False",
+      "avgHoldMinutes": "46.43589743589744",
+      "bootstrapLower95": "-0.3211649799894729",
+      "grossMeanPct": "-0.01706302551132332",
+      "positiveThenLoss": "18",
+      "stopCount": "25",
+      "targetCount": "1",
+      "timeCount": "21",
+      "exitCount": "31",
+      "finalUSDT": "426.51295395632246",
+      "minuteCloseDrawdownPct": "-14.697409208735513"
+    },
+    {
+      "method": "B-R06",
+      "costPct": "0.24",
+      "delayMinutes": "1",
+      "segment": "ALL90",
+      "trades": "78",
+      "winPct": "19.230769230769234",
+      "meanNetPct": "-0.2608443935784939",
+      "profitFactor": "0.1469391048952909",
+      "noLosses": "False",
+      "avgHoldMinutes": "45.34615384615385",
+      "bootstrapLower95": "-0.32459428545931546",
+      "grossMeanPct": "-0.020844393578493933",
+      "positiveThenLoss": "18",
+      "stopCount": "25",
+      "targetCount": "1",
+      "timeCount": "21",
+      "exitCount": "31",
+      "finalUSDT": "425.58827570840066",
+      "minuteCloseDrawdownPct": "-14.882344858319874"
+    }
+  ],
+  "blockers": [
+    "All seven primary development groups have negative mean net returns",
+    "No complete live detector, executable quote and actual delivery receipt integration",
+    "No prospective outcomes yet; do not reuse seen history as OOS",
+    "Incomplete historical trial inventory and aligned PBO/DSR evidence",
+    "14-day shadow and 14-day trial not completed"
+  ],
+  "nextSteps": [
+    "Connect frozen detector in isolated shadow runner, with restart and causal tests",
+    "Collect bid/ask, source/receive/decision times and delivery receipts; flag data gaps",
+    "Replay frozen groups on prospective interval without tuning or early winner selection",
+    "Report net outcomes, coverage, execution differences and every promotion gate",
+    "Register any changed implementation as a new experiment before evaluating it"
+  ],
+  "parentProtocolRawSha256": "7c110498cf3f76929130b0152c9d5ff2cb5c0a046a280f9447241e8c28a29356",
+  "implementation": {
+    "calibrationBoundary": "UTC midnight, past90 days excluding boundary",
+    "quoteSource": "Read-only production WS journal, every available evaluation",
+    "replayCatchup": "Late signals rejected, no historical quote invention",
+    "delivery": "Existing baseline exit transport receipts only; no new-wave sender",
+    "model": "63 scenario accounts, sampled ask/bid, full registered friction on top of spread",
+    "qualification": "Modeled outcomes are diagnostic, not actual fills or qualified trade evidence",
+    "exit": "sampled bid stop first, target, scheduled E1/E2, time; tick extremes between samples unknown"
+  }
+}

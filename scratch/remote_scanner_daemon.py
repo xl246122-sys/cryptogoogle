@@ -249,7 +249,7 @@ def record_model_alert(sig: dict) -> str:
             "structureSupport": sig.get("structure_support"),
             "reasonZh": sig.get("reason_zh"),
             "winRateStatus": "历史胜率：未验证",
-            "tradeRules": {key: sig.get(key) for key in ("model", "rule_version", "max_hold_minutes", "min_net_tp1", "min_net_rr", "friction_pct", "max_net_target", "invalidation_price", "tp1_fraction", "target_basis", "exit_rule", "tier", "tier_label")},
+            "tradeRules": {key: sig.get(key) for key in ("model", "rule_version", "max_hold_minutes", "min_net_tp1", "min_net_rr", "friction_pct", "cost_snapshot", "max_net_target", "invalidation_price", "tp1_fraction", "target_basis", "exit_rule", "tier", "tier_label")},
         }
         OPEN_TRACKS[alert_id] = {
             "alertId": alert_id,
@@ -508,70 +508,28 @@ def validate_execution_fill(fill, now_ms):
 
 
 def execution_summary(fills):
-    zero = Decimal('0')
-    inventory = cost = realized = fees = bought = sold = zero
-    known, seen, slips = True, set(), []
-    position = None
-    for f in sorted(fills, key=lambda x: (x['executedAtMs'], x['fillId'])):
-        validate_execution_fill(f, int(time.time()*1000))
-        if f['fillId'] in seen: raise ValueError('duplicate fillId')
-        seen.add(f['fillId'])
-        if position and position != f['positionId']: raise ValueError('mixed positions')
-        position = f['positionId']
-        price, qty = Decimal(str(f['price'])), Decimal(str(f['quantity']))
-        commission = None if f['commission'] is None else Decimal(str(f['commission']))
-        asset = f['commissionAsset']
-        base_fee = (commission or zero) if asset == 'BTC' else zero
-        rate = Decimal(1) if asset == 'USDT' else price if asset == 'BTC' else (None if f.get('commissionAssetUsdtRate') is None else Decimal(str(f['commissionAssetUsdtRate'])))
-        converted = zero if commission == zero else None if commission is None or rate is None else commission*rate
-        if converted is None: known = False
-        else: fees += converted
-        cash_fee = zero if asset == 'BTC' else (converted or zero)
-        if f['side'] == 'BUY':
-            inventory += qty-base_fee; cost += qty*price+cash_fee; bought += qty
-        else:
-            used = qty+base_fee
-            if inventory <= 0 or used > inventory + Decimal('0.0000000001'): raise ValueError('sell exceeds recorded BTC inventory')
-            allocated = cost*min(used, inventory)/inventory
-            realized += qty*price-cash_fee-allocated
-            inventory = max(zero, inventory-used); cost -= allocated; sold += qty
-        ref = f.get('referencePrice')
-        slips.append({'fillId': f['fillId'], 'quoteDifferenceUsdt': None if ref is None else float((price-Decimal(str(ref)) if f['side']=='BUY' else Decimal(str(ref))-price)*qty),
-                      'benchmarkAgeMs': None if f.get('referenceAtMs') is None else f['executedAtMs']-f['referenceAtMs']})
-    return {'inventory': float(inventory) if known else None, 'inventoryBeforeUnknownFees': float(inventory),
-            'remainingCostUsdt': float(cost) if known else None, 'realizedNetUsdt': float(realized) if known else None,
-            'feeUsdt': float(fees) if known else None, 'feesKnown': known, 'bought': float(bought), 'sold': float(sold),
-            'closed': known and bought>0 and inventory<Decimal('0.0000000001'), 'slippage': slips, 'source': 'MANUAL_UNVERIFIED'}
+    from cryptog.execution_accounting import execution_summary as summarize
+    for fill in fills:
+        validate_execution_fill(fill, int(time.time()*1000))
+    return summarize(fills)
 
 
 def _p2_on_fill(row: dict) -> None:
-    """Mirror a saved manual fill into the research ledger. A ledger error never rejects the fill."""
+    from cryptog.ledger import Ledger
+    from cryptog.execution_sync import mirror
+    ledger=None
     try:
-        fill = row.get('fill')
-        if not fill:
-            return
-        from cryptog.ledger import Ledger
-        ledger = Ledger(os.path.join(LIBRARY_DIR, 'research.sqlite3'))
-        try:
-            summary = row.get('executionSummary') or {}
-            closed = None if fill.get('side') != 'SELL' or 'closed' not in summary else bool(summary.get('closed'))
-            bars_1m = bars_15m = None
-            if RUNTIME is not None:
-                try:
-                    snap = RUNTIME.cache.snapshot(int(time.time() * 1000))
-                    series = snap.get('series') or {}
-                    bars_1m, bars_15m = series.get('1m') or [], series.get('15m') or []
-                except Exception as exc:
-                    logger.error('P2 fill cache unavailable: %s', type(exc).__name__)
-            ledger.on_fill(fill, signal_id=row.get('alertId'), latency=row.get('entryLatency'),
-                           inventory_closed=closed, bars_1m=bars_1m, bars_15m=bars_15m)
-        finally:
-            ledger.close()
-    except Exception as exc:
-        logger.error('P2 ledger fill skipped: %s', type(exc).__name__)
+        ledger=Ledger(os.path.join(LIBRARY_DIR,'research.sqlite3'))
+        series={}
+        if RUNTIME is not None and hasattr(RUNTIME,'cache'):
+            series=RUNTIME.cache.snapshot(int(time.time()*1000)).get('series') or {}
+        if not mirror(ledger,row,series.get('1m'),series.get('15m')):logger.error('Research action pending retry')
+    except Exception as exc:logger.error('Research action mirror: %s',type(exc).__name__)
+    finally:
+        if ledger:ledger.close()
 
 
-def apply_user_action(payload: dict) -> dict:
+def apply_user_action(payload: dict, authenticated_owner=None) -> dict:
     event_id = payload.get('eventId')
     try:
         allowed = {'SIM_BUY', 'USER_CLOSE', 'BACKFILL_CLOSE', 'STILL_HOLDING', 'PHONE_RECEIVED', 'PHONE_OPENED', 'ENTRY_REJECTED', 'MANUAL_FILL'}
@@ -591,12 +549,20 @@ def apply_user_action(payload: dict) -> dict:
                'note': str(payload.get('note') or '')[:300], 'approximate': bool(payload.get('approximate')),
                'exitSource': str(payload.get('exitSource') or '')[:40], 'strategy': str(payload.get('strategy') or '')[:40],
                'recordSource': 'MANUAL_UNVERIFIED' if kind=='MANUAL_FILL' else 'SIMULATED' if kind in ('SIM_BUY','USER_CLOSE') else 'CLIENT_REPORTED'}
+        if authenticated_owner is not None:
+            if not isinstance(authenticated_owner,str) or len(authenticated_owner)!=64 or any(c not in '0123456789abcdef' for c in authenticated_owner):
+                raise ValueError('invalid authenticated owner')
+            row['authenticatedOwner']=authenticated_owner
+        if payload.get('costSnapshot') is not None:
+            from cryptog.cost_model import cost_snapshot
+            row['costSnapshot'] = cost_snapshot(int(at), payload['costSnapshot'])
         for key in ('entryPrice', 'exitPrice', 'positionSize', 'signalAtMs', 'signalPrice', 'quoteAtMs'):
             row[key] = _finite(payload.get(key), positive=True, nullable=True)
         with LIBRARY_LOCK:
             _library_ensure()
             old = ACTION_EVENTS.get(event_id)
             if old:
+                if old.get('authenticatedOwner') and old['authenticatedOwner']!=authenticated_owner: raise ValueError('action owner mismatch')
                 if old.get('payloadHash') != payload_hash: raise ValueError('eventId reused with different data')
                 return {'ok': True, 'eventId': event_id, 'alertId': alert_id, 'duplicate': True}
             track = OPEN_TRACKS.get(alert_id, {})
@@ -612,8 +578,11 @@ def apply_user_action(payload: dict) -> dict:
                 quantity = row['positionSize']/row['entryPrice']
                 gross = quantity*(row['exitPrice']-row['entryPrice'])
                 cost = (row['positionSize']+quantity*row['exitPrice'])*0.00055
+                if row.get('strategy')=='QUICK_PAPER_V2':
+                    from cryptog.execution_accounting import paper_close_cost
+                    cost=paper_close_cost(row,list(ACTION_EVENTS.values()))
                 row['simulatedAccounting'] = {'grossUsdt': gross, 'assumedCostUsdt': cost, 'netUsdt': gross-cost,
-                                              'costAssumption': '0.055% each leg, not actual fees', 'performanceEligible': False}
+                                              'costAssumption': 'frozen entry cost-v2.1 on initial notional' if row.get('strategy')=='QUICK_PAPER_V2' else '0.055% each leg, not actual fees', 'performanceEligible': False}
             if kind == 'MANUAL_FILL':
                 fill = payload.get('fill'); validate_execution_fill(fill, now_ms)
                 if any(r.get('fill', {}).get('fillId') == fill['fillId'] for r in ACTION_EVENTS.values()): raise ValueError('fillId already recorded')
@@ -624,6 +593,7 @@ def apply_user_action(payload: dict) -> dict:
                     if not original or not original.get('fill') or replaces in replaced or original['alertId'] != alert_id or original['fill']['positionId'] != fill['positionId']:
                         raise ValueError('invalid or already superseded fill correction')
                     row['replacesEventId'] = replaces
+                    row['replacesFillId'] = original['fill']['fillId']
                     replaced.add(replaces)
                 if fill.get('exchangeTradeId') and any(r['eventId'] not in replaced and r.get('fill', {}).get('exchangeTradeId') == fill['exchangeTradeId'] for r in ACTION_EVENTS.values()):
                     raise ValueError('exchange trade ID already recorded; use a correction')
@@ -651,6 +621,12 @@ def apply_user_action(payload: dict) -> dict:
 
 def record_delivery(alert_id, status):
     with LIBRARY_LOCK:
+        if RUNTIME and getattr(RUNTIME,'ledger',None):
+            try:
+                from cryptog.funnel import stage
+                stage(RUNTIME.ledger,alert_id,int(time.time()*1000),'DELIVERY',status)
+            except Exception:
+                logger.exception('Delivery research mirror failed')
         _append_jsonl('delivery_events.jsonl', {'alertId': alert_id, 'status': status, 'atMs': int(time.time()*1000),
                                              'note': 'FCM acceptance is not handset delivery or human attention'})
 
@@ -791,7 +767,7 @@ def start_model_library_server():
             if not self._authorized():
                 return self._json(401, {"ok": False})
             route = urllib.parse.urlparse(self.path).path
-            if route not in ("/model-library/strategy-settings", "/model-library/action", "/model-library/position-review", "/model-library/exit-device", "/model-library/exit-receipt", "/model-library/exit-device-status", "/model-library/ai-config", "/model-library/ai-trigger", "/model-library/ai-verify"):
+            if route not in ("/model-library/strategy-settings", "/model-library/action", "/model-library/position-review", "/model-library/exit-device", "/model-library/exit-receipt", "/model-library/exit-device-status", "/model-library/ai-config", "/model-library/ai-trigger", "/model-library/ai-verify", "/model-library/account-context"):
                 return self._json(404, {"ok": False})
             try:
                 length = int(self.headers.get("Content-Length") or 0)
@@ -805,6 +781,10 @@ def start_model_library_server():
                 return self._json(400, {"ok": False, "error": "json"})
             if not isinstance(payload, dict):
                 return self._json(400, {"ok": False})
+            if route == '/model-library/account-context':
+                if not RUNTIME:return self._json(503,{'ok':False})
+                try:return self._json(200,{'ok':True,'account':RUNTIME.account_context.put(payload,int(time.time()*1000))})
+                except ValueError as exc:return self._json(400,{'ok':False,'error':str(exc)})
             if route == '/model-library/strategy-settings':
                 try:return self._json(200,{'ok':True,**RUNTIME.settings.put(payload)})
                 except ValueError as exc:return self._json(409,{'ok':False,'error':str(exc)})
@@ -851,7 +831,7 @@ def start_model_library_server():
                     return self._json(503, {'ok': False, 'error': 'AI_ENGINE_UNAVAILABLE'})
                 res = RUNTIME.ai.execute_analysis(trigger_reason='MANUAL_TRIGGER')
                 return self._json(200 if res.get('ok') else 400, res)
-            result = apply_user_action(payload)
+            result = apply_user_action(payload,hashlib.sha256(self.headers.get('X-Library-Token','').encode()).hexdigest())
             return self._json(200 if result.get("ok") else 400, result)
 
     try:
@@ -917,6 +897,7 @@ def fcm_payload(sig: dict) -> dict:
         "netRiskReward": sig["net_rr"],
         "timeHorizon": sig["time_horizon"],
         "ruleScore": sig["rule_score"],
+        "rawRuleScore": sig.get("raw_rule_score", sig["rule_score"]),
         "ruleScoreBreakdown": sig.get("rule_score_breakdown", ""),
         "decisionStatus": "BUY_CANDIDATE",
         "confirmationTime": sig["confirmation_time"],
@@ -948,7 +929,7 @@ def fcm_payload(sig: dict) -> dict:
         "timeStopMinutes": sig.get("time_stop_minutes"),
         "tradeRules": json.dumps({"model": sig.get("model"), "ruleVersion": sig.get("rule_version"),
             "maxHoldMinutes": sig.get("max_hold_minutes"), "minNetTp1": sig.get("min_net_tp1"),
-            "minNetRr": sig.get("min_net_rr"), "frictionPct": sig.get("friction_pct"),
+            "minNetRr": sig.get("min_net_rr"), "frictionPct": sig.get("friction_pct"), "costSnapshot": sig.get("cost_snapshot"),
             "maxNetTarget": sig.get("max_net_target"), "invalidationPrice": sig.get("invalidation_price"),
             "tp1Fraction": sig.get("tp1_fraction"), "targetBasis": sig.get("target_basis"),
             "exitRule": sig.get("exit_rule"), "tier": sig.get("tier"), "tierLabel": sig.get("tier_label")}, ensure_ascii=False),

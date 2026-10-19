@@ -2,6 +2,7 @@ import { ingestMessage, focusMessage } from './inbox';
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications, Channel } from '@capacitor/push-notifications';
 import {refreshExitDevice} from './exitPush';
+import {NotificationRelay,recordNotificationEvidence} from './notificationEvidence';
 
 /**
  * Hybrid Notification service supporting:
@@ -16,6 +17,7 @@ class NotificationService {
   private isNative: boolean = false;
   private initialized = false;
   private deviceToken: string | null = null;
+  private registrationIssue: string | null = null;
     public getDeviceToken() { return this.deviceToken; }
     public async refreshPermission():Promise<boolean> {
       if(this.isNative)this.hasPermission=(await PushNotifications.checkPermissions()).receive==='granted';
@@ -24,10 +26,12 @@ class NotificationService {
   public async ensureDeviceToken():Promise<string> {
     if(!this.isNative)throw new Error('请在 Android APP 内绑定手机通知');
     await this.initNativePush();
+    this.registrationIssue=null;
     if(!await this.requestPermission())throw new Error('请在手机设置中允许 Crypto-G 发送通知');
     const until=Date.now()+10000;
-    while(!this.deviceToken && Date.now()<until)await new Promise(resolve=>setTimeout(resolve,200));
-    if(!this.deviceToken)throw new Error('推送注册尚未完成，请检查网络后重试绑定');
+    while(!this.deviceToken && !this.registrationIssue && Date.now()<until)await new Promise(resolve=>setTimeout(resolve,200));
+    if(this.registrationIssue)throw new Error(this.registrationIssue);
+    if(!this.deviceToken)throw new Error('未获取到手机推送地址：请检查 Google Play 服务和连接 Firebase 的网络，再重试绑定。通知权限已允许不等于推送注册成功。');
     return this.deviceToken;
   }
 
@@ -74,12 +78,13 @@ class NotificationService {
 
       // 3. Register push listeners
       await PushNotifications.addListener('registration', (token) => {
+        this.registrationIssue=null;
         this.deviceToken=token.value;
         void refreshExitDevice(token.value).catch(()=>{ /* UI binding can be retried explicitly. */ });
       });
 
       await PushNotifications.addListener('registrationError', (error) => {
-        console.error('>>> [FCM Registration Error]:', error);
+        this.registrationIssue='手机推送注册失败：请检查 Google Play 服务是否可用，以及当前网络能否连接 Firebase，然后重试绑定。';
       });
 
       await PushNotifications.addListener('pushNotificationReceived', (notification) => {
@@ -88,9 +93,8 @@ class NotificationService {
         const title = notif.title || data.title || data.strategyNameZh || data.scenarioNameZh || '';
         const body = notif.body || data.body || data.summaryZh || data.message || data.reasonZh || '';
         ingestMessage({ ...data, title, body });
-        if (this.signalCallback && data) {
-          this.signalCallback(data, 'received');
-        }
+        recordNotificationEvidence(data,'received');
+        this.signalRelay.emit(data,'received');
       });
 
       await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
@@ -101,9 +105,8 @@ class NotificationService {
         const msgId = data.eventId || data.id || data.testId || data.deliveryId || notif.id || ('push_' + Date.now());
         ingestMessage({ ...data, id: msgId, title, body });
         focusMessage(String(msgId));
-        if (this.signalCallback && data) {
-          this.signalCallback(data, 'opened');
-        }
+        recordNotificationEvidence(data,'opened');
+        this.signalRelay.emit(data,'opened');
       });
       if (permStatus.receive === 'granted') {
         this.hasPermission = true;
@@ -115,11 +118,10 @@ class NotificationService {
     }
   }
 
-  private signalCallback: ((payload: any, origin?: 'received' | 'opened') => void) | null = null;
+  private signalRelay = new NotificationRelay();
 
   public onSignalReceived(callback: (payload: any, origin?: 'received' | 'opened') => void) {
-    this.signalCallback = callback;
-    return () => { if (this.signalCallback === callback) this.signalCallback = null; };
+    return this.signalRelay.subscribe(callback);
   }
 
   public async requestPermission(): Promise<boolean> {

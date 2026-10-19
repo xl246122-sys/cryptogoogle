@@ -5,6 +5,7 @@ import math
 from decimal import Decimal
 from .ai_review import decorate_exit_message
 from .stop_monitor import classify_exit
+from .cost_model import signal_cost
 
 def _average_entry(rows, fallback):
     num = den = Decimal(0)
@@ -26,7 +27,7 @@ def v2_notice(contract, rows, bought, disposed, inventory, entry_at, now_ms, bid
     bars = series or {}
     found = classify_exit(
         bid, now_ms, entry, entry_at, stop, tp1, tp2, invalidation, contract.get('reclaim_price'),
-        contract.get('breakeven_price'), sold, contract['max_hold_minutes'],
+        entry * (1 + signal_cost(contract)['frictionPct'] / 100) if entry else None, sold, contract['max_hold_minutes'],
         contract.get('time_stop_minutes') or 90, contract.get('time_stop_progress_r') or 0.3,
         bars.get('1m'), bars.get('15m'), bars.get('1h'), fresh)
     if found is None:
@@ -84,7 +85,11 @@ def project_positions(actions, tracks, now_ms, bid=None, quote_at=None, series=N
         if not contract['stop_loss']<=contract['invalidation_price']<contract['target_tp1']<=contract['target_tp2'] or contract['tp1_fraction']>1:
             report['reason']='INVALID_EXIT_PLAN';reports.append(report);continue
         deadline=entry_at+contract['max_hold_minutes']*60000
-        report.update(status='MONITORING',deadlineMs=deadline,timeApproximate=approximate)
+        average=_average_entry(rows,contract.get('entry_price'))
+        if average and contract.get('rule_version')=='short-horizon-v2':
+            report['plannedRiskUsdt']=float(inventory)*max(0,average-contract['stop_loss']+average*signal_cost(contract)['frictionPct']/100)
+        report.update(status='MONITORING',deadlineMs=deadline,timeApproximate=approximate,
+                      overdueUnclosed=now_ms>=deadline, timeStopAtMs=entry_at+90*60000)
         kind=None;quantity=inventory;message=None
         if contract.get('rule_version') == 'short-horizon-v2':
             kind, quantity, message = v2_notice(contract, rows, bought, disposed, inventory, entry_at, now_ms, bid, fresh, series)

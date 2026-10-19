@@ -5,6 +5,7 @@ cost from real fills, and it may not lower it. BNB discount is off unless a
 fill sample is explicitly marked as discounted.
 """
 from typing import Optional, Sequence
+import math
 
 from .config import (
     V2_BNB_FRICTION_PCT, V2_FRICTION_PCT, V2_RISK_PER_TRADE_PCT, V2_SLIPPAGE_PCT, V2_TAKER_PCT,
@@ -13,6 +14,38 @@ from .config import (
 
 def round_trip_pct(bnb_discount: bool = False) -> float:
     return V2_BNB_FRICTION_PCT if bnb_discount else V2_FRICTION_PCT
+
+
+COST_VERSION = "cost-v2.1"
+
+
+def cost_snapshot(at_ms: int, calibration: Optional[dict] = None) -> dict:
+    """Immutable decision-time cost; discount requires explicit verified evidence.
+
+    Reference-price simulation deducts the full cost on initial notional.
+    Actual fills use cash flows instead. Spread is included in the aggregate
+    slippage allowance, never added for a second time.
+    """
+    raw = calibration or {}
+    applicable = raw.get("availableAtMs", at_ms) <= at_ms
+    discounted = applicable and raw.get("bnbDiscount") is True and raw.get("bnbVerified") is True
+    floor = round_trip_pct(discounted)
+    measured = raw.get("frictionPct", floor) if applicable else floor
+    if isinstance(measured, bool) or not isinstance(measured, (int, float)) or not math.isfinite(measured) or measured < 0:
+        raise ValueError("INVALID_COST")
+    return {"costModelVersion": COST_VERSION, "frictionPct": max(floor, measured), "floorPct": floor,
+            "source": raw.get("source", "PRIOR") if applicable else "PRIOR", "applicableAtMs": at_ms,
+            "availableAtMs": raw.get("availableAtMs", at_ms) if applicable else at_ms,
+            "bnbDiscount": discounted, "bnbVerified": discounted,
+            "executionModelVersion": "reference-price-v2.1", "feeTreatment": "IN_AGGREGATE_COST",
+            "slippageTreatment": "IN_AGGREGATE_COST", "spreadTreatment": "IN_SLIPPAGE_ALLOWANCE",
+            "priceTreatment": "REFERENCE_PRICE", "costBasis": "INITIAL_NOTIONAL"}
+
+
+def signal_cost(signal: dict) -> dict:
+    return cost_snapshot(int(signal.get("timestamp", signal.get("openedAt", 0))),
+                         signal.get("cost_snapshot") or signal.get("costSnapshot") or
+                         {"frictionPct": signal.get("friction_pct", V2_FRICTION_PCT)})
 
 
 def position_fraction_pct(stop_distance_pct: float, friction_pct: Optional[float] = None,

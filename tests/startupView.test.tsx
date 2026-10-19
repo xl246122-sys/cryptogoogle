@@ -83,7 +83,9 @@ test('the system guard drawer stays closed and leaves the guardian card in view'
   assert.ok(drawer.includes('策略实验室'));
   const page = renderToStaticMarkup(<SystemGuardView config={{ soundEnabled: true, soundVolume: 0.5, autoPopupEnabled: false, activeStrategies: { BURST_BREAKOUT: true, FLASH_CRASH_REBOUND: true, RANGE_OSCILLATION: true } } as never} macroTrend={market} onUpdateConfig={() => {}} onRequestNotificationPermission={() => {}} hasNotificationPermission={true} />);
   assert.ok(page.indexOf('版本与策略实验室') < page.indexOf('系统与量化守护'));
-  assert.ok(page.includes('24/7 守护中'));
+  assert.ok(page.includes('扫描快照新鲜'));
+  assert.ok(!page.includes('24/7 守护中'));
+  assert.ok(!page.includes('联动就绪'));
 });
 
 test('the AI brain switch names the model API and leaves system monitoring on', () => {

@@ -31,9 +31,9 @@ class ValidationTests(unittest.TestCase):
         self.assertFalse(promotion_decision(bad, n_trials=1)["passes"])
         self.assertTrue(unlearnable_gaps({"stopPct": 1.5, "frictionPct": 0.11, "holdMinutes": 400, "aiWritesPrices": True}))
 
-    def test_identical_rules_are_not_overfit(self):
+    def test_identical_rules_cannot_supply_pbo_evidence(self):
         column = [0.01, -0.02, 0.03, 0.0, 0.02, -0.01, 0.01, 0.02]
-        self.assertEqual(pbo([column, list(column)], slices=4), 0.0)
+        self.assertIsNone(pbo([column, list(column)], slices=4))
 
 
 if __name__ == "__main__":

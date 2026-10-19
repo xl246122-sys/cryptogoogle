@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { TradeSignal, WatchlistItem } from '../types/crypto';
 import { PlanFacts } from './HorizonPanels';
+import {NetPlanCard} from './NetPlanCard';
 import { EntryQuote, entryIssue, fetchEntryQuote, signalTimeIssue } from '../services/signalValidity';
 import {
   X,
@@ -124,7 +125,7 @@ export const SignalAlertModal: React.FC<SignalAlertModalProps> = ({
 
     const text = `【Crypto-G 历史候选参数（非即时买入指令）】\n币种: ${signal.coinName} (${signal.symbol})\n生成时参考价: ${formatPrice(signal.entryPrice)}\n计划本金: $${amountNum.toLocaleString()} (~${coinQtyFormatted} ${coinSymbol})\nTP1止盈: ${formatPrice(signal.targetTP1)} (+${signal.profitPercent1}%${netTp1Text} | +$${tp1ProfitUSD.toFixed(2)})\nTP2止盈: ${formatPrice(signal.targetTP2)} (+${signal.profitPercent2}% | +$${tp2ProfitUSD.toFixed(2)})\nSL止损: ${formatPrice(signal.stopLoss)} (-${signal.stopLossPercent}% | -$${slLossUSD.toFixed(2)})\n盈亏比: ${signal.riskRewardRatio}:1${netRRText} | 规则匹配度: ${signal.ruleScore || signal.confidence}/100 (历史胜率未验证)\n持仓周期: ${signal.timeHorizon}\n策略: ${signal.strategyNameZh}\n有效至: ${signal.expiresAt ? new Date(signal.expiresAt).toLocaleString() : "未提供"}；实际入场须重新复核\n分析: ${signal.reasonZh}`;
 
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(text+'\n以上 TP1/TP2 金额是全仓单点退出毛价差，不是 50% 分批后的整笔净收益。实际执行须使用工作成本并核对剩余仓位退出，不能据此认定整笔达到 0.8%。');
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -299,7 +300,7 @@ export const SignalAlertModal: React.FC<SignalAlertModalProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-[#81c995]">
                 <Calculator className="w-3.5 h-3.5" />
-                <span>预估收益试算器 (Profit Calculator)</span>
+                <span>计划收益情景试算</span>
               </div>
               <span className="text-[10px] font-mono text-[#9aa0a6]">
                 联动底仓: <strong className="text-white">${defaultSize.toLocaleString()}</strong>
@@ -403,7 +404,7 @@ export const SignalAlertModal: React.FC<SignalAlertModalProps> = ({
               <div className="p-2 rounded-lg bg-[#231518] border border-[#4f2328]">
                 <div className="text-[10px] text-[#f28b82] flex items-center gap-0.5">
                   <ArrowDownRight className="w-3 h-3" />
-                  <span>SL 潜在风险</span>
+                  <span>SL 未计费价差</span>
                 </div>
                 <div className="text-sm font-bold font-mono text-[#f28b82] mt-0.5">
                   -${slLossUSD.toFixed(2)}
@@ -415,6 +416,7 @@ export const SignalAlertModal: React.FC<SignalAlertModalProps> = ({
             </div>
           </div>
 
+          <NetPlanCard signal={signal} amount={amountNum}/>
           {signal.tradeRules && <div className="p-3 rounded-xl bg-[#1c2029] border border-[#2b313f] text-xs text-[#c4c7c5] space-y-2">
             <p className="text-[#81c995]">该模型退出计划（规则模拟，不自动下单）</p>
             <p>TP1：退出初始仓位 {Math.round(signal.tradeRules.tp1Fraction * 100)}%；剩余仓位在 TP2 退出。若比例为 100%，TP2 仅作结构参考。</p>

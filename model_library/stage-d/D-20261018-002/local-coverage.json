@@ -1,0 +1,80 @@
+{
+  "atMs": 1792298770089,
+  "database": "data/research.sqlite3",
+  "quickCheck": "ok",
+  "coverage": {
+    "1m": {
+      "count": 338000,
+      "startMs": 1729146420000,
+      "endMs": 1749426360000,
+      "internalMissing": 0,
+      "invalid": 0,
+      "contentSha256": "527fe0265a4a833b727b2db69537761a414dc72e45835f10117570a089167a75",
+      "tailMissing": 714539
+    },
+    "5m": {
+      "count": 210239,
+      "startMs": 1729146000000,
+      "endMs": 1792217400000,
+      "internalMissing": 0,
+      "invalid": 0,
+      "contentSha256": "b110f9687a948bffbdfcb43b05df146a377e57cf0019a9fa567258d8fbb02667",
+      "tailMissing": 270
+    },
+    "15m": {
+      "count": 70079,
+      "startMs": 1729146600000,
+      "endMs": 1792216800000,
+      "internalMissing": 0,
+      "invalid": 0,
+      "contentSha256": "dd4405d3ede23069d190dd289cbc31fe7d8d5cc9d7f746b25c2f4b1d60cd4f76",
+      "tailMissing": 90
+    },
+    "1h": {
+      "count": 17519,
+      "startMs": 1729148400000,
+      "endMs": 1792213200000,
+      "internalMissing": 0,
+      "invalid": 0,
+      "contentSha256": "9d708a167e01d0e75c0668cbcd8f12d781cdb7fb66f8a59ace62ae3ce86ff1e8",
+      "tailMissing": 22
+    },
+    "4h": {
+      "count": 4379,
+      "startMs": 1729152000000,
+      "endMs": 1792195200000,
+      "internalMissing": 0,
+      "invalid": 0,
+      "contentSha256": "d1b14c41c1d6f9137448eac5c4a44cd940a70cbb1edf1c096e2ad19c1de20161",
+      "tailMissing": 6
+    },
+    "1d": {
+      "count": 729,
+      "startMs": 1729209600000,
+      "endMs": 1792108800000,
+      "internalMissing": 0,
+      "invalid": 0,
+      "contentSha256": "04e8092f321cb44755718ff131068a5cd6a325567e56cca4e2b4d7971fc93b6c",
+      "tailMissing": 1
+    }
+  },
+  "counts": {},
+  "releaseStages": [],
+  "derivatives": {
+    "funding_rates": {
+      "count": 0,
+      "startMs": null,
+      "endMs": null
+    },
+    "open_interest": {
+      "count": 0,
+      "startMs": null,
+      "endMs": null
+    },
+    "taker_ratio": {
+      "count": 0,
+      "startMs": null,
+      "endMs": null
+    }
+  }
+}

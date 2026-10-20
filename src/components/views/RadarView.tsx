@@ -168,16 +168,16 @@ export const RadarView: React.FC<RadarViewProps> = ({
           </div>
           <div className="p-2 rounded-xl bg-[#171a21] border border-[#282d38]">
             <div className="text-[10px] text-[#f28b82]">1H 布林上轨 (20,2)</div>
-            <div className="font-semibold text-[#f28b82] mt-0.5">{macroTrend.dataReady && macroTrend.hourlyBollinger ? formatPrice(macroTrend.hourlyBollinger.upper) : '等待完整收盘数据'}</div>
+            <div className="font-semibold text-[#f28b82] mt-0.5">{(macroTrend.dataReady || macroTrend.stateSource === 'CACHE') && macroTrend.hourlyBollinger ? formatPrice(macroTrend.hourlyBollinger.upper) : '等待完整收盘数据'}</div>
           </div>
           <div className="p-2 rounded-xl bg-[#171a21] border border-[#282d38]">
             <div className="text-[10px] text-[#81c995]">1H 布林下轨 (20,2)</div>
-            <div className="font-semibold text-[#81c995] mt-0.5">{macroTrend.dataReady && macroTrend.hourlyBollinger ? formatPrice(macroTrend.hourlyBollinger.lower) : '等待完整收盘数据'}</div>
+            <div className="font-semibold text-[#81c995] mt-0.5">{(macroTrend.dataReady || macroTrend.stateSource === 'CACHE') && macroTrend.hourlyBollinger ? formatPrice(macroTrend.hourlyBollinger.lower) : '等待完整收盘数据'}</div>
           </div>
           <div className="p-2 rounded-xl bg-[#171a21] border border-[#282d38]">
             <div className="text-[10px] text-[#8ab4f8]">策略状态</div>
             <div className={`font-semibold mt-0.5 ${isBearish ? 'text-[#fdd663]' : 'text-[#81c995]'}`}>
-              {macroTrend.dataReady === false ? '等待行情' : isBearish ? '防守观察' : '等待买入确认'}
+              {!macroTrend.dataReady && macroTrend.stateSource !== 'CACHE' ? '等待行情' : isBearish ? '防守观察' : '等待买入确认'}
             </div>
           </div>
         </div>
@@ -208,7 +208,7 @@ export const RadarView: React.FC<RadarViewProps> = ({
               <Radio className="w-4 h-4 animate-pulse" />
             </div>
             <div>
-              <div className="text-xs font-semibold text-white">{macroTrend.dataReady ? '当前没有可复核的买入提醒' : '服务器状态未知 · 等待恢复'}</div>
+              <div className="text-xs font-semibold text-white">{macroTrend.dataReady || macroTrend.stateSource === 'CACHE' ? '当前没有可复核的买入提醒' : '服务器状态未知 · 等待恢复'}</div>
               <p className="text-[11px] text-[#9aa0a6] max-w-sm mx-auto mt-1 leading-relaxed">
                 {isBearish
                   ? `1小时为空头时，云端只有在跌幅达到 5% 并且止跌门禁通过后才会给出买入候选。手机不再单独生成买入弹窗。`

@@ -38,13 +38,14 @@ export function connection(): ServerConnection {
   if(native()){
     if(!nativeReady)throw new Error(storageIssue||'等待安全存储初始化');
     if(!nativeSaved)throw new Error('尚未配置安全服务器连接；补录仍保存在本机');
-    return {...nativeSaved};
+    const cacheScope = nativeSaved.cacheScope || `native_${nativeSaved.url.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    return {...nativeSaved, cacheScope};
   }
   const raw = localStorage.getItem(KEY);
   if (!raw) throw new Error('尚未配置安全服务器连接；补录仍保存在本机');
   const saved = JSON.parse(raw);
   const valid = validateConnection(saved);
-  const cacheScope = saved.cacheScope || crypto.randomUUID();
+  const cacheScope = saved.cacheScope || `local_${valid.url.replace(/[^a-zA-Z0-9]/g, '_')}`;
   if (!saved.cacheScope) {
     try { localStorage.setItem(KEY, JSON.stringify({...valid, cacheScope})); } catch {}
   }

@@ -301,23 +301,35 @@ export default function App() {
       busy = true;
       try {
         const state = await fetchMarketState();
-        if (!disposed) setMacroTrend(state);
-      } catch { if (!disposed) setMacroTrend(unknownMarket()); }
+        if (!disposed && state) {
+          setMacroTrend(prev => {
+            if (state.stateSource === 'UNAVAILABLE' && (prev.dataReady || prev.stateSource === 'CACHE') && Number.isFinite(prev.hourlyMa20) && prev.hourlyMa20 > 0) {
+              return {
+                ...prev,
+                stateSource: 'CACHE',
+                regimeNameZh: prev.regimeNameZh.includes('同步') ? prev.regimeNameZh : `${prev.regimeNameZh} · 同步中`,
+              };
+            }
+            return state;
+          });
+        }
+      } catch { /* Retain previous state on network timeout/drop */ }
       finally { busy = false; }
     };
     void refresh();
     void fetchAIState();
     const resume = () => {
       if (document.visibilityState !== 'visible') return;
-      setMacroTrend(getInitialMarketState());
       void refresh();
       void fetchAIState();
     };
     document.addEventListener('visibilitychange', resume);
-    const syncReceipts=()=>void flushExitReceipts().catch(()=>{});
+    const syncReceipts=()=>{ if (document.visibilityState === 'visible') void flushExitReceipts().catch(()=>{}); };
     syncReceipts();
     const receiptTimer=window.setInterval(syncReceipts,15000);
-    const timer = window.setInterval(() => void refresh(), 3000);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh();
+    }, 3000);
     return () => { disposed = true; document.removeEventListener('visibilitychange', resume); window.clearInterval(timer);window.clearInterval(receiptTimer); };
   }, []);
 

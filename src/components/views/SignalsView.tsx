@@ -98,7 +98,7 @@ export const SignalsView: React.FC<SignalsViewProps> = ({
       </div>
 
       {/* Horizontal Strategy Filter Chips Scroll */}
-      <div className="grid grid-cols-4 gap-1.5">
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
         {filterOptions.map((opt) => {
           const isSelected = filterStrategy === opt.id;
           return (
@@ -106,7 +106,7 @@ export const SignalsView: React.FC<SignalsViewProps> = ({
               key={opt.id}
               aria-pressed={isSelected}
               onClick={() => setFilterStrategy(opt.id)}
-              className={`flex items-center justify-center gap-1 min-w-0 min-h-9 px-1 py-2 rounded-lg text-[11px] font-medium whitespace-nowrap transition-all ${
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all shrink-0 ${
                 isSelected
                   ? 'bg-[#1a3258] text-[#8ab4f8] border border-[#3b6bb0]/60 font-semibold shadow-sm'
                   : 'bg-[#1c2029] text-[#9aa0a6] hover:text-[#e2e2e8] border border-[#282d38]'
@@ -115,7 +115,7 @@ export const SignalsView: React.FC<SignalsViewProps> = ({
               {opt.icon}
               <span>{opt.label}</span>
               {opt.id !== 'ALL' && (
-                <span className="text-[10px] font-mono opacity-60">
+                <span className="text-[10px] font-mono opacity-60 ml-0.5">
                   {signals.filter((s) => s.strategy === opt.id).length}
                 </span>
               )}

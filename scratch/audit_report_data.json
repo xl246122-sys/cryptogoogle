@@ -1,0 +1,134 @@
+{
+  "S1": {
+    "candidates": 1561,
+    "filled": 4,
+    "outOfSample": {
+      "trades": 0,
+      "winRate": null,
+      "expectancyPct": null,
+      "profitFactor": null,
+      "bootstrapLower95": null,
+      "sharpe": null,
+      "dsr": null,
+      "perDay": 0.0,
+      "nTrials": 1
+    },
+    "fullSample": null,
+    "promotion": {
+      "passes": false,
+      "gaps": [
+        "样本外交易数 0 < 60",
+        "扣费后期望值 无 < 0.10%",
+        "自助法 95% 下限未大于 0",
+        "胜率低于 52%",
+        "盈利因子低于 1.30",
+        "PBO 缺失 未低于 0.30",
+        "交易级频率不在 0.5–6 条/天"
+      ],
+      "nTrials": 1,
+      "pbo": null
+    }
+  },
+  "S2": {
+    "candidates": 912,
+    "filled": 159,
+    "outOfSample": {
+      "trades": 0,
+      "winRate": null,
+      "expectancyPct": null,
+      "profitFactor": null,
+      "bootstrapLower95": null,
+      "sharpe": null,
+      "dsr": null,
+      "perDay": 0.0,
+      "nTrials": 1
+    },
+    "fullSample": null,
+    "promotion": {
+      "passes": false,
+      "gaps": [
+        "样本外交易数 0 < 60",
+        "扣费后期望值 无 < 0.10%",
+        "自助法 95% 下限未大于 0",
+        "胜率低于 52%",
+        "盈利因子低于 1.30",
+        "PBO 缺失 未低于 0.30",
+        "交易级频率不在 0.5–6 条/天"
+      ],
+      "nTrials": 1,
+      "pbo": null
+    }
+  },
+  "S3": {
+    "candidates": 261,
+    "filled": 6,
+    "outOfSample": {
+      "trades": 0,
+      "winRate": null,
+      "expectancyPct": null,
+      "profitFactor": null,
+      "bootstrapLower95": null,
+      "sharpe": null,
+      "dsr": null,
+      "perDay": 0.0,
+      "nTrials": 1
+    },
+    "fullSample": null,
+    "promotion": {
+      "passes": false,
+      "gaps": [
+        "样本外交易数 0 < 60",
+        "扣费后期望值 无 < 0.10%",
+        "自助法 95% 下限未大于 0",
+        "胜率低于 52%",
+        "盈利因子低于 1.30",
+        "PBO 缺失 未低于 0.30",
+        "交易级频率不在 0.5–6 条/天"
+      ],
+      "nTrials": 1,
+      "pbo": null
+    }
+  },
+  "S4": {
+    "candidates": 132,
+    "filled": 0,
+    "outOfSample": {
+      "trades": 0,
+      "winRate": null,
+      "expectancyPct": null,
+      "profitFactor": null,
+      "bootstrapLower95": null,
+      "sharpe": null,
+      "dsr": null,
+      "perDay": 0.0,
+      "nTrials": 1
+    },
+    "fullSample": null,
+    "promotion": {
+      "passes": false,
+      "gaps": [
+        "样本外交易数 0 < 60",
+        "扣费后期望值 无 < 0.10%",
+        "自助法 95% 下限未大于 0",
+        "胜率低于 52%",
+        "盈利因子低于 1.30",
+        "PBO 缺失 未低于 0.30",
+        "交易级频率不在 0.5–6 条/天"
+      ],
+      "nTrials": 1,
+      "pbo": null
+    }
+  },
+  "S5": {
+    "candidates": 49,
+    "filled": 0,
+    "outOfSample": null,
+    "fullSample": null,
+    "promotion": {
+      "passes": false,
+      "gaps": [
+        "S5 只做研究，不进入交易级"
+      ]
+    }
+  }
+}

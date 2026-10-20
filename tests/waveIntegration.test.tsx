@@ -33,11 +33,15 @@ inbox.ingestMessage(confirmed);assert.equal(inbox.messages()[0].revisions?.lengt
 assert.equal(waveStatus(parseWaveMessage(confirmed)!,confirmed.expiresAt),'已过期');
 inbox.ingestMessage(holding);
 inbox.autoClearMessages(Date.now()+365*86400000);assert.equal(inbox.messages().length,2);
-inbox.clearAllMessages();assert.equal(inbox.messages().length,2,'Audit/position messages survive manual general cleanup');
-inbox.markAllAsRead();inbox.clearReadMessages();assert.equal(inbox.messages().length,2);
-inbox.deleteMessage(holding.eventId);assert.equal(inbox.messages().length,2);
 inbox.ingestMessage(invalidated);assert.equal(waveStatus(inbox.messages().find(m=>m.id===down.eventId)!.extra),'已撤销');
 inbox.ingestMessage(confirmed);assert.equal(inbox.messages().find(m=>m.id===down.eventId)!.extra.revision,4);
+inbox.clearAllMessages();
+assert.equal(inbox.messages().some(m=>m.id===down.eventId),false,'Research observations are ordinary messages and clear');
+assert.equal(inbox.messages().some(m=>m.id===holding.eventId),true,'Open position reminders survive general cleanup');
+inbox.markAllAsRead();inbox.clearReadMessages();assert.equal(inbox.messages().some(m=>m.id===holding.eventId),true);
+inbox.deleteMessage(holding.eventId);assert.equal(inbox.messages().some(m=>m.id===holding.eventId),false);
+inbox.ingestMessage(holding);assert.equal(inbox.messages().some(m=>m.id===holding.eventId),false,'A deleted message must not return from sync');
+inbox.ingestMessage(down);assert.equal(inbox.messages().some(m=>m.id===down.eventId),false);
 let html=renderToStaticMarkup(<WaveMessageDetails data={down}/>);
 assert.ok(html.includes('尚未形成'));assert.ok(!html.includes('计划参考区间'));
 html=renderToStaticMarkup(<WaveMessageDetails data={confirmed} now={confirmed.expiresAt}/>);

@@ -17,14 +17,26 @@ const PENDING_FOCUS_KEY = 'cryptog_pending_focus_id';
 const CLEAR_KEY = 'cryptog_inbox_cleared_at';
 const CYCLE_KEY = 'cryptog_inbox_cycle_start';
 const DELETED_KEY = 'cryptog_inbox_deleted_ids';
+function deletedIds(): Set<string> {
+  return new Set<string>(JSON.parse(localStorage.getItem(DELETED_KEY) || '[]'));
+}
+
+function rememberDeleted(id: string) {
+  const ids = deletedIds();
+  ids.add(id);
+  localStorage.setItem(DELETED_KEY, JSON.stringify([...ids]));
+}
+
 function protectedMessage(m:InboxMessage,now=Date.now()) {
-  return m.extra?.eventType==='WAVE_STATE_RESEARCH'||m.extra?.eventType==='POSITION_EXIT_NOTICE'
-    ||(m.extra?.signalType==='BUY'&&Number(m.extra.expiresAt)>now);
+  const extra = m.extra || {};
+  return extra.eventType==='POSITION_EXIT_NOTICE'
+    || (extra.eventType==='WAVE_STATE_RESEARCH' && extra.position)
+    || (extra.signalType==='BUY' && Number(extra.expiresAt)>now);
 }
 
 export function clearAllMessages(now = Date.now()) {
   const old = JSON.parse(localStorage.getItem(KEY) || '[]') as InboxMessage[];
-  const ids = new Set<string>(JSON.parse(localStorage.getItem(DELETED_KEY) || '[]'));
+  const ids = deletedIds();
   const kept=old.filter(m=>protectedMessage(m,now));
   old.filter(m=>!protectedMessage(m,now)).forEach(m => ids.add(m.id));
   localStorage.setItem(DELETED_KEY, JSON.stringify([...ids]));
@@ -74,7 +86,9 @@ export function ingestMessage(data: any) {
   if (!data) return;
   if(data.eventType==='WAVE_STATE_RESEARCH') {
     const wave=parseWaveMessage(data);if(!wave)return;
+    if(deletedIds().has(wave.eventId))return;
     const rows=messages();const index=rows.findIndex(r=>r.id===wave.eventId);const old=rows[index];
+    if(!old && wave.issuedAtMs<=Number(localStorage.getItem(CLEAR_KEY)||0))return;
     if(old && (!parseWaveMessage(old.extra)||wave.revision<=Number(old.extra.revision)||wave.decisionTime<Number(old.extra.decisionTime)))return;
     const item:InboxMessage={id:wave.eventId,title:waveTitle(wave),body:waveBody(wave),at:wave.issuedAtMs,
       category:'四阶段研究',read:false,extra:wave,revisions:old?[...(old.revisions||[]),old.extra]:[]};
@@ -89,7 +103,7 @@ export function ingestMessage(data: any) {
     (data.title ? `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}` : null);
   if (typeof id !== 'string') return;
   autoClearMessages();
-  if ((JSON.parse(localStorage.getItem(DELETED_KEY) || '[]') as string[]).includes(id)) return;
+  if (deletedIds().has(id)) return;
 
   // 1. Resolve Title
   const rawTitle = data.title || data.notification?.title || data.strategyNameZh || data.scenarioNameZh;
@@ -194,10 +208,7 @@ export function clearReadMessages() {
 }
 
 export function deleteMessage(id: string) {
-  if(messages().some(m=>m.id===id&&protectedMessage(m)))return;
-  const ids = new Set<string>(JSON.parse(localStorage.getItem(DELETED_KEY) || '[]'));
-  ids.add(id);
-  localStorage.setItem(DELETED_KEY,JSON.stringify([...ids]));
+  rememberDeleted(id);
   save(messages().filter((m) => m.id !== id));
 }
 

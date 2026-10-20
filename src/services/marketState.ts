@@ -293,7 +293,16 @@ async function requestMarketState(key: string): Promise<MacroTrendAnalysis> {
       cache: 'no-store',
     });
     if (response.ok) {
-      const parsed = parseMarketState(await response.json());
+      const body = await response.json();
+      const serverDate = response.headers.get('date');
+      let serverNow = Date.now();
+      if (serverDate) {
+        const parsedDate = Date.parse(serverDate);
+        if (Number.isFinite(parsedDate) && parsedDate > 0) {
+          serverNow = parsedDate;
+        }
+      }
+      const parsed = parseMarketState(body, serverNow);
       const current = connection();
       if (current.url + current.token !== key) return unknownMarket();
       if (parsed.dataReady) writeStartupCache('market', parsed);

@@ -69,22 +69,12 @@ def recheck(data,config,quote,now):
 
 def transport_fields(data):
     phase=data['phase']
+    names={'DOWN_START':'下跌行情预警','SELL_EXHAUSTION':'超卖乏力·关注企稳',
+        'REBOUND_CONFIRMED':'反弹确认·研究候选','INVALIDATED':'研究候选已撤销'}
     if phase=='HOLDING_EXHAUSTION':
         p=data['position'];closed=data['lifecycle']=='INVALIDATED'
-        title='【'+LABEL+'】'+('模拟持仓已结束·提醒失效' if closed else '超买乏力·考虑获利了结' if p['estimatedNetUsdt']>0 else '上涨乏力·注意回撤风险')
-        body='模拟仓提醒，不会自动卖出。'
-        if not closed:body+=f"剩余 {p['remainingQuantity']:.8f} BTC；按当前买一价和买入成本预算估计，扣费后盈亏 {p['estimatedNetUsdt']:+.2f} USDT（{p['estimatedNetPct']:+.2f}%）。请自行核对退出。"
-        fields={k:(encode(v) if not isinstance(v,str) else v) for k,v in data.items()}
-        fields.update(title=title,body=body)
-        if sum(len(k.encode())+len(v.encode()) for k,v in fields.items())>3500:raise ValueError('PAYLOAD_TOO_LARGE')
-        return title,body,fields
-    title='【'+LABEL+'】'+{'DOWN_START':'下跌启动，注意盯盘','SELL_EXHAUSTION':'超卖乏力，关注企稳',
-        'REBOUND_CONFIRMED':'反弹确认·研究候选','INVALIDATED':'研究候选已撤销'}[phase]
-    body='仅供研究观察，不是正式买入指令，不代表已成交。'
-    if phase=='REBOUND_CONFIRMED':
-        r=data['risk'];p=data['plan']
-        body+=f"参考区间 {p['entryLow']:.2f}–{p['entryHigh']:.2f}；预计扣费净空间 {r['netTargetPct']:.2f}%（非保证收益），止损距离 {r['stopDistancePct']:.2f}%。"
-    else:body+='打开查看事件详情与状态。'
+        names={'HOLDING_EXHAUSTION': '模拟持仓已结束·提醒失效' if closed else '超买乏力·考虑获利了结' if p['estimatedNetUsdt']>0 else '上涨乏力·注意回撤风险'}
+    title=body='观察：【'+names[phase]+'】'
     fields={k:(encode(v) if not isinstance(v,str) else v) for k,v in data.items()}
     fields.update(title=title,body=body)
     if sum(len(k.encode())+len(v.encode()) for k,v in fields.items())>3500:
@@ -124,16 +114,32 @@ class ResearchOutbox:
         return key
 
     def step(self,quote,now,send):
-        # One new observation per 30 seconds. Expired backlog is discarded, never replayed on restart.
+        # One new observation per 60 seconds (1 minute max). Expired backlog is discarded.
         with self.db:
             self.db.execute("UPDATE deliveries SET state='EXPIRED' WHERE state='PENDING' AND json_extract(payload,'$.expiresAt')<=?",(now,))
-        if now-self.get('lastAttemptMs',0)<30000:return None
+        if now-self.get('lastAttemptMs',0)<60000:return None
         row=self.db.execute("SELECT id,payload,config FROM deliveries WHERE state='PENDING' ORDER BY feature_ms DESC,revision DESC LIMIT 1").fetchone()
         if not row:return None
         key,text,config=row;data=json.loads(text)
-        if data['lifecycle']=='INVALIDATED' and not self.db.execute("SELECT 1 FROM deliveries WHERE event=? AND state='FCM_ACCEPTED' LIMIT 1",(data['eventId'],)).fetchone():
-            with self.db:self.db.execute("UPDATE deliveries SET state='NO_PRIOR_NOTIFICATION' WHERE id=?",(key,))
+        phase=data.get('phase')
+        # Crucial fix: INVALIDATED must only be sent if REBOUND_CONFIRMED was actually sent to user
+        if phase=='INVALIDATED' or data.get('lifecycle')=='INVALIDATED':
+            has_rebound = self.db.execute("SELECT 1 FROM deliveries WHERE event=? AND state='FCM_ACCEPTED' AND json_extract(payload,'$.phase')='REBOUND_CONFIRMED' LIMIT 1",(data['eventId'],)).fetchone()
+            if not has_rebound:
+                with self.db:self.db.execute("UPDATE deliveries SET state='SILENT_INVALIDATION',result='NO_REBOUND_PUSHED' WHERE id=?",(key,))
+                return None
+        # Same content cooldown: at least 60 seconds (1 minute) for same alert content
+        last_phase_time = self.get(f'last_push_{phase}', 0)
+        if now - last_phase_time < 60000:
+            with self.db:self.db.execute("UPDATE deliveries SET state='COOLDOWN',result='SAME_CONTENT_WITHIN_1M' WHERE id=?",(key,))
             return None
+        # Cross-category conflicting suppression: 180s (3 minutes) between different categories
+        last_sent_phase = self.get('last_sent_phase')
+        last_sent_time = self.get('last_push_any_ms', 0)
+        if last_sent_phase and last_sent_phase != phase:
+            if now - last_sent_time < 180000:
+                with self.db:self.db.execute("UPDATE deliveries SET state='COOLDOWN',result='CROSS_CATEGORY_WITHIN_3M' WHERE id=?",(key,))
+                return None
         try:data=recheck(data,json.loads(config),quote,now)
         except (ValueError,KeyError,TypeError) as error:
             # Quote outages can recover inside TTL; risk failures are recorded, not BUY pushes.
@@ -146,6 +152,10 @@ class ResearchOutbox:
         try:
             result=send(data)
             state='FCM_ACCEPTED'
+            with self.db:
+                self.db.execute('INSERT OR REPLACE INTO cursor VALUES(?,?)',(f'last_push_{phase}',encode(now)))
+                self.db.execute('INSERT OR REPLACE INTO cursor VALUES(?,?)',('last_push_any_ms',encode(now)))
+                self.db.execute('INSERT OR REPLACE INTO cursor VALUES(?,?)',('last_sent_phase',encode(phase)))
         except Exception as error:
             result=type(error).__name__;state='UNCERTAIN'
         with self.db:self.db.execute('UPDATE deliveries SET state=?,result=? WHERE id=?',(state,result,key))

@@ -9,7 +9,7 @@ const fixtures=JSON.parse(readFileSync('tests/fixtures/wave_push_contract.json',
 for(const raw of fixtures){
  const parsed=parseWaveMessage(raw);assert.ok(parsed);
  assert.equal(parsed.tradeEligible,false);assert.equal(parseCloudSignal(raw),null);
- assert.ok(raw.title.includes('研究观察·未验证'));
+ assert.ok(raw.title.startsWith('观察：【'));
  const html=renderToStaticMarkup(<WaveMessageDetails data={parsed} now={parsed.issuedAtMs}/>);
  assert.ok(html.includes(parsed.phase==='INVALIDATED'?'已撤销':'研究观察·未验证'));
  if(parsed.phase==='REBOUND_CONFIRMED'){assert.ok(html.includes('不是保证收益'));assert.equal(parsed.risk?.status,'PASS_RESEARCH_ONLY');}

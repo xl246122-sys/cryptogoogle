@@ -22,7 +22,7 @@ class PushTests(unittest.TestCase):
             data,config=payload_from_event(source(phase=phase),NOW,NOW,NOW)
             checked=recheck(data,config,quote(),NOW)
             title,_,fields=transport_fields(checked)
-            self.assertIn('研究观察·未验证',title)
+            self.assertTrue(title.startswith('观察：【'))
             self.assertEqual(fields['signalType'],'OBSERVE');self.assertEqual(fields['tradeEligible'],'false')
             self.assertLess(data['revision'],2**53)
             self.assertNotIn('BUY',fields['signalType'])
@@ -39,7 +39,7 @@ class PushTests(unittest.TestCase):
         d2,c2=payload_from_event(source('B-R05'),NOW,NOW,NOW);self.o.ingest(d2,c2,NOW)
         self.assertEqual(self.o.db.execute('SELECT count(*) FROM deliveries').fetchone()[0],1)
         calls=[];self.o.step(quote(),NOW,lambda p:calls.append(p) or 'accepted')
-        self.o.db.close();self.o=ResearchOutbox(self.path);self.o.step(quote(NOW+31000),NOW+31000,lambda p:calls.append(p))
+        self.o.db.close();self.o=ResearchOutbox(self.path);self.o.step(quote(NOW+61000),NOW+61000,lambda p:calls.append(p))
         self.assertEqual(len(calls),1)
         d,c=payload_from_event(source('B-R03','SELL_EXHAUSTION'),NOW+1000,NOW+1000,NOW+1000);self.o.ingest(d,c,NOW+1000)
         d,c=payload_from_event(source('B-R03'),NOW,NOW,NOW);key=self.o.ingest(d,c,NOW)
@@ -49,10 +49,20 @@ class PushTests(unittest.TestCase):
         calls=[];self.o.step(quote(NOW-6000),NOW,lambda p:calls.append(p));self.assertFalse(calls)
         self.o.step(quote(NOW+121000),NOW+121000,lambda p:calls.append(p));self.assertFalse(calls)
         self.assertEqual(self.o.db.execute('SELECT state FROM deliveries').fetchone()[0],'EXPIRED')
-        d,c=payload_from_event(source(phase='SELL_EXHAUSTION'),NOW+1000,NOW+1000,NOW+1000);self.o.ingest(d,c,NOW+1000)
+        d,c=payload_from_event(source(phase='SELL_EXHAUSTION'),NOW+182000,NOW+182000,NOW+182000);self.o.ingest(d,c,NOW+182000)
         def fail(p):raise TimeoutError()
-        self.o.step(quote(NOW+1000),NOW+1000,fail)
+        self.o.step(quote(NOW+182000),NOW+182000,fail)
         self.assertEqual(self.o.db.execute("SELECT count(*) FROM deliveries WHERE state='UNCERTAIN'").fetchone()[0],1)
+    def test_invalidated_silenced_without_rebound_confirmed(self):
+        # 1. Send DOWN_START
+        d1,c1=payload_from_event(source('B-R00', phase='DOWN_START'),NOW,NOW,NOW);self.o.ingest(d1,c1,NOW)
+        self.o.step(quote(NOW),NOW,lambda p:'accepted')
+        self.assertEqual(self.o.db.execute("SELECT count(*) FROM deliveries WHERE state='FCM_ACCEPTED'").fetchone()[0],1)
+        # 2. INVALIDATED arrives: since REBOUND_CONFIRMED was never accepted, must be SILENT_INVALIDATION
+        d2,c2=payload_from_event(source('B-R00', phase='INVALIDATED'),NOW+200000,NOW+200000,NOW+200000);self.o.ingest(d2,c2,NOW+200000)
+        res = self.o.step(quote(NOW+200000),NOW+200000,lambda p:'accepted')
+        self.assertIsNone(res)
+        self.assertEqual(self.o.db.execute("SELECT count(*) FROM deliveries WHERE state='SILENT_INVALIDATION'").fetchone()[0],1)
     def test_future_invalid_and_no_position_inference(self):
         for p in [source(phase='HOLDING_EXHAUSTION'),source('S5')]:
             with self.assertRaises(ValueError):payload_from_event(p,NOW,NOW,NOW)
